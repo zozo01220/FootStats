@@ -1,0 +1,79 @@
+@page "/bienvenue"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@inject CurrentUserService CurrentUser
+
+<PageTitle>Bienvenue - FootStats</PageTitle>
+
+<div class="container">
+    <div class="page-hero-eyebrow">
+        <span class="dot"></span>
+        <span>Bienvenue sur FootStats</span>
+    </div>
+    <h1 class="page-hero-title" style="font-size: 44px;">C'EST PARTI@(firstName is null ? "" : $", {firstName.ToUpperInvariant()}") !</h1>
+    <p class="page-hero-subtitle" style="max-width: 560px;">Votre compte est créé. Voici les prochaines étapes pour configurer votre espace famille.</p>
+
+    <div class="welcome-grid">
+        <a class="welcome-step" href="/players">
+            <div class="welcome-step-num">1</div>
+            <div class="welcome-step-icon">
+                <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="7" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>
+            </div>
+            <div class="welcome-step-body">
+                <div class="welcome-step-title">Ajouter mon premier enfant</div>
+                <div class="welcome-step-desc">Nom, date de naissance, poste, photo. Vous pourrez en ajouter d'autres ensuite.</div>
+            </div>
+            <svg class="welcome-step-arrow" viewBox="0 0 24 24" width="18" height="18"><path d="M9 18l6-6-6-6"></path></svg>
+        </a>
+
+        <a class="welcome-step" href="/clubs">
+            <div class="welcome-step-num">2</div>
+            <div class="welcome-step-icon">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M4 21V9M4 9l4-4 4 2 4-3 4 2v12l-4-2-4 3-4-2-4 2z"></path></svg>
+            </div>
+            <div class="welcome-step-body">
+                <div class="welcome-step-title">Créer son club</div>
+                <div class="welcome-step-desc">Nom, logo, couleurs. Un enfant peut changer de club au fil des saisons.</div>
+            </div>
+            <svg class="welcome-step-arrow" viewBox="0 0 24 24" width="18" height="18"><path d="M9 18l6-6-6-6"></path></svg>
+        </a>
+
+        <a class="welcome-step" href="/">
+            <div class="welcome-step-num">3</div>
+            <div class="welcome-step-icon">
+                <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+            </div>
+            <div class="welcome-step-body">
+                <div class="welcome-step-title">Démarrer une saison</div>
+                <div class="welcome-step-desc">Puis enregistrez les matchs, buts et statistiques au fil de l'année.</div>
+            </div>
+            <svg class="welcome-step-arrow" viewBox="0 0 24 24" width="18" height="18"><path d="M9 18l6-6-6-6"></path></svg>
+        </a>
+
+        <a class="welcome-step" href="/users">
+            <div class="welcome-step-num">4</div>
+            <div class="welcome-step-icon">
+                <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V8a5 5 0 0 1 10 0v3"></path></svg>
+            </div>
+            <div class="welcome-step-body">
+                <div class="welcome-step-title">Inviter le reste de la famille</div>
+                <div class="welcome-step-desc">Envoyez une invitation pour gérer ou simplement consulter les statistiques.</div>
+            </div>
+            <svg class="welcome-step-arrow" viewBox="0 0 24 24" width="18" height="18"><path d="M9 18l6-6-6-6"></path></svg>
+        </a>
+    </div>
+
+    <div class="welcome-skip">
+        Vous pouvez aussi <a href="/">passer directement au tableau de bord</a>.
+    </div>
+</div>
+
+@code {
+    private string? firstName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await CurrentUser.GetCurrentUserAsync();
+        firstName = user.FirstName;
+    }
+}

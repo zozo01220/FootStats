@@ -1,0 +1,1091 @@
+@page "/calendrier"
+@attribute [Authorize(Roles = "Admin,User,Consultant")]
+@rendermode InteractiveServer
+@inject CalendarService Calendar
+@inject CurrentUserService CurrentUser
+@inject NavigationManager Navigation
+@inject AppDbContext Db
+@inject IJSRuntime JS
+
+<PageTitle>Calendrier - FootStats</PageTitle>
+
+<div class="container">
+    <PageHero Eyebrow="Club & famille" Title="Calendrier" Subtitle="Tous les matchs, tournois et entraînements, en un coup d'œil." />
+
+    @if (visiblePlayers.Count == 0)
+    {
+        <p class="empty-note">Aucun joueur suivi pour l'instant. <a href="/players" style="color: var(--pitch); font-weight: 600;">Ajoute un joueur</a> pour voir son calendrier ici.</p>
+    }
+    else
+    {
+        <div class="card">
+            <div class="section-title" style="padding: 22px 24px 4px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="display: flex; align-items: center; gap: 10px;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                    Entraînements
+                    <span class="pill">@trainings.Count récurrence@(trainings.Count > 1 ? "s" : "")</span>
+                </span>
+                @if (canManage)
+                {
+                    <button class="icon-action" @onclick="OpenCreateTraining" aria-label="Ajouter un entraînement" title="Ajouter un entraînement">
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M12 5v14M5 12h14"></path></svg>
+                    </button>
+                }
+            </div>
+            @if (trainings.Count == 0)
+            {
+                <p class="empty-note" style="padding: 0 24px 12px;">Aucun entraînement récurrent pour le moment.</p>
+            }
+            else
+            {
+                @foreach (var t in trainings)
+                {
+                    <div class="training-rule-row">
+                        <div class="training-days">
+                            @foreach (var d in TrainingOccurrenceHelper.WeekOrder)
+                            {
+                                <span class="training-day-pip @(t.Days.HasFlag(d.Mask) ? "on" : "off")">@d.Short[..1]</span>
+                            }
+                        </div>
+                        <div style="flex-grow: 1; min-width: 0;">
+                            <div style="font-size: 15.5px; font-weight: 700;">
+                                @TrainingOccurrenceHelper.DaysLabel(t.Days), @t.StartTime.ToString("HH:mm") – @t.EndTime.ToString("HH:mm")
+                                @if (visiblePlayers.Count > 1)
+                                {
+                                    <span class="pill" style="margin-left: 6px;">@t.Season?.Player?.FirstName @t.Season?.Player?.LastName</span>
+                                }
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 3px; display: flex; align-items: center; gap: 6px;">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:13px;height:13px;"><path d="M12 21s-7-7.5-7-12a7 7 0 0 1 14 0c0 4.5-7 12-7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
+                                @t.Location &middot; du @t.StartDate.ToString("dd.MM.yy")@(t.EndDate is { } end ? $" au {end:dd.MM.yy}" : "")
+                            </div>
+                        </div>
+                        @if (canManage)
+                        {
+                            <div class="row-actions">
+                                <button class="icon-action" @onclick="() => OpenEditTraining(t)" aria-label="Modifier" title="Modifier">
+                                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                                </button>
+                                <button class="icon-action delete" @onclick="() => DeleteTraining(t.Id)" aria-label="Supprimer" title="Supprimer">
+                                    <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <div class="cal-toolbar">
+            <div class="cal-nav">
+                <button class="icon-action" @onclick="GoPrevious" aria-label="Précédent">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M15 6l-6 6 6 6"></path></svg>
+                </button>
+                <span class="cal-nav-label">@NavLabel()</span>
+                <button class="icon-action" @onclick="GoNext" aria-label="Suivant">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M9 6l6 6-6 6"></path></svg>
+                </button>
+            </div>
+            <div class="cal-view-toggle">
+                <div class="seg">
+                    <button type="button" class="@(view == CalendarViewMode.Month ? "active" : "")" @onclick='() => SetView(CalendarViewMode.Month)'>Mois</button>
+                    <button type="button" class="@(view == CalendarViewMode.Week ? "active" : "")" @onclick='() => SetView(CalendarViewMode.Week)'>Semaine</button>
+                </div>
+            </div>
+            <div class="cal-scope">
+                @if (visiblePlayers.Count > 1)
+                {
+                    <label class="dash-player-picker">
+                        <span class="dash-player-avatar">@(selectedPlayerId == 0 ? "T" : PlayerInitials(visiblePlayers.FirstOrDefault(p => p.Id == selectedPlayerId)))</span>
+                        <select @bind="selectedPlayerId" @bind:after="OnPlayerFilterChangedAsync">
+                            <option value="0">Tous les joueurs</option>
+                            @foreach (var player in visiblePlayers)
+                            {
+                                <option value="@player.Id">@player.FirstName @player.LastName</option>
+                            }
+                        </select>
+                    </label>
+                }
+                <button class="btn btn-outline btn-sm" @onclick="GoToday">Aujourd'hui</button>
+            </div>
+        </div>
+
+        <div class="cal-type-filters">
+            <button type="button" class="cal-filter-chip-all @(AllTypesSelected ? "active" : "")" @onclick="SelectAllTypeFilters">Tous</button>
+            <button type="button" class="@FilterChipClass(CalendarFilterType.Tournoi)" @onclick="() => ToggleTypeFilter(CalendarFilterType.Tournoi)">
+                <span class="event-dot type-tournoi"></span>Tournoi
+            </button>
+            <button type="button" class="@FilterChipClass(CalendarFilterType.Plateau)" @onclick="() => ToggleTypeFilter(CalendarFilterType.Plateau)">
+                <span class="event-dot type-plateau"></span>Plateau
+            </button>
+            <button type="button" class="@FilterChipClass(CalendarFilterType.Training)" @onclick="() => ToggleTypeFilter(CalendarFilterType.Training)">
+                <span class="event-dot type-training"></span>Entraînement
+            </button>
+        </div>
+
+        @if (view == CalendarViewMode.Month)
+        {
+            <div class="cal-grid">
+                <div class="cal-grid-head">
+                    @foreach (var d in TrainingOccurrenceHelper.WeekOrder)
+                    {
+                        <span>@d.Short</span>
+                    }
+                </div>
+                <div class="cal-grid-body">
+                    @foreach (var day in MonthGridDays())
+                    {
+                        var dayEvents = EventsOn(day);
+                        <div class="cal-cell @(day.Month != referenceDate.Month ? "other-month" : "") @(day == Today ? "today" : "")">
+                            <div class="cal-day-num">@day.Day</div>
+                            @foreach (var e in dayEvents.Take(2))
+                            {
+                                <div class="cal-chip event-tint @TypeClass(e) @CancelledClasses(e)" @onclick="() => GoToEvent(e)" title="@ChipTitle(e)">
+                                    <span class="event-dot @TypeClass(e)"></span>
+                                    <span class="club-badge-mini-xs">
+                                        @if (!string.IsNullOrEmpty(e.ClubLogoPath))
+                                        {
+                                            <img src="@e.ClubLogoPath" alt="" />
+                                        }
+                                        else
+                                        {
+                                            @((e.ClubName ?? "?")[..1].ToUpper())
+                                        }
+                                    </span>
+                                    <span class="cal-chip-label">@ChipLabel(e)</span>
+                                    <span class="cal-chip-cat">@e.Category</span>
+                                </div>
+                            }
+                            @if (dayEvents.Count > 2)
+                            {
+                                <span class="cal-chip-more" title="@(dayEvents.Count - 2) évènement(s) supplémentaire(s) ce jour-là">+@(dayEvents.Count - 2)</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="week-grid">
+                @foreach (var day in WeekDays())
+                {
+                    var dayEvents = EventsOn(day);
+                    <div class="week-col @(day == Today ? "today" : "")">
+                        <div class="week-col-head">
+                            <div class="dow">@TrainingOccurrenceHelper.WeekOrder[((int)day.DayOfWeek + 6) % 7].Short</div>
+                            <div class="num">@day.Day</div>
+                        </div>
+                        <div class="week-col-body">
+                            @if (dayEvents.Count == 0)
+                            {
+                                <div class="week-empty">—</div>
+                            }
+                            else
+                            {
+                                @foreach (var e in dayEvents)
+                                {
+                                    <div class="week-item event-tint @TypeClass(e) @CancelledClasses(e)" @onclick="() => GoToEvent(e)">
+                                        <div class="week-item-top">
+                                            <span class="club-badge-mini-xs">
+                                                @if (!string.IsNullOrEmpty(e.ClubLogoPath))
+                                                {
+                                                    <img src="@e.ClubLogoPath" alt="" />
+                                                }
+                                                else
+                                                {
+                                                    @((e.ClubName ?? "?")[..1].ToUpper())
+                                                }
+                                            </span>
+                                            <div class="title">@ChipLabel(e)</div>
+                                            <span class="cal-chip-cat">@e.Category</span>
+                                        </div>
+                                        <div class="meta">@TimeAndPlayer(e)</div>
+                                        @if (e.IsCancelled && e.CancellationReason is { } weekReason)
+                                        {
+                                            <span class="event-cancel-badge">@TrainingOccurrenceHelper.CancellationReasonLabel(weekReason)</span>
+                                        }
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (canManage)
+        {
+            <div class="event-fab-wrap">
+                @if (showEventMenu)
+                {
+                    <div class="event-fab-menu">
+                        <button type="button" class="event-fab-menu-item" @onclick="() => OpenCreateTournamentEvent(EventType.Tournoi)">
+                            <span class="event-fab-menu-icon type-tournoi">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                            </span>
+                            Tournoi
+                        </button>
+                        <button type="button" class="event-fab-menu-item" @onclick="() => OpenCreateTournamentEvent(EventType.Plateau)">
+                            <span class="event-fab-menu-icon type-plateau">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                            </span>
+                            Plateau
+                        </button>
+                        <button type="button" class="event-fab-menu-item" @onclick="OpenCreateTrainingOccurrence">
+                            <span class="event-fab-menu-icon type-training">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                            </span>
+                            Entraînement
+                        </button>
+                    </div>
+                }
+                <button type="button" class="event-fab" @onclick="ToggleEventMenu" aria-label="Ajouter">
+                    <svg viewBox="0 0 24 24" class="icon" style="@(showEventMenu ? "transform: rotate(45deg);" : "")"><path d="M12 5v14M5 12h14"></path></svg>
+                </button>
+            </div>
+        }
+    }
+
+    <Modal @ref="tournamentCreateModal" Label="Nouvel événement">
+        <ChildContent>
+            <EditForm Model="tournamentForm" OnValidSubmit="AddTournamentEvent">
+                @if (NonEquitationSeasons.Count > 1)
+                {
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Enfant</label>
+                        <select @bind="tournamentForm.SeasonId">
+                            @foreach (var s in NonEquitationSeasons)
+                            {
+                                <option value="@s.Id">@s.Player?.FirstName @s.Player?.LastName — @s.Club?.Name (@s.Label)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Nom (optionnel)</label>
+                    <input @bind="tournamentForm.Name" placeholder="Pas de nom pour un plateau" />
+                </div>
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Ville</label>
+                    <input @bind="tournamentForm.City" />
+                </div>
+                <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+                    <div class="field" style="margin-bottom: 0;"><label>Date</label><input type="date" @bind="tournamentForm.Date" /></div>
+                    <div class="field" style="margin-bottom: 0;"><label>Coup d'envoi (optionnel)</label><input type="time" @bind="tournamentForm.KickoffTime" /></div>
+                </div>
+                @if (tournamentFormError is not null)
+                {
+                    <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@tournamentFormError</p>
+                }
+                <button class="btn btn-primary" type="submit">Ajouter</button>
+            </EditForm>
+        </ChildContent>
+    </Modal>
+
+    <Modal @ref="trainingOccurrenceCreateModal" Label="Nouvel entraînement">
+        <ChildContent>
+            <EditForm Model="trainingOccurrenceForm" OnValidSubmit="AddTrainingOccurrence">
+                @if (availableSeasons.Count > 1)
+                {
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Enfant</label>
+                        <select @bind="trainingOccurrenceForm.SeasonId">
+                            @foreach (var s in availableSeasons)
+                            {
+                                <option value="@s.Id">@s.Player?.FirstName @s.Player?.LastName — @s.Club?.Name (@s.Label)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 16px;">
+                    <div class="field" style="margin-bottom: 0;"><label>Date</label><input type="date" @bind="trainingOccurrenceForm.Date" /></div>
+                    <div class="field" style="margin-bottom: 0;"><label>Heure de début</label><input type="time" @bind="trainingOccurrenceForm.StartTime" /></div>
+                    <div class="field" style="margin-bottom: 0;"><label>Heure de fin</label><input type="time" @bind="trainingOccurrenceForm.EndTime" /></div>
+                </div>
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Lieu</label>
+                    <input @bind="trainingOccurrenceForm.Location" placeholder="Stade Municipal" />
+                </div>
+                @if (trainingOccurrenceFormError is not null)
+                {
+                    <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@trainingOccurrenceFormError</p>
+                }
+                <button class="btn btn-primary" type="submit">Ajouter</button>
+            </EditForm>
+        </ChildContent>
+    </Modal>
+
+    <Modal @ref="trainingQuickModal" Label="@(quickEditEvent is null ? "Entraînement" : $"Entraînement — {DayLabel(quickEditEvent.Date)}")">
+        <Subtitle>
+            @if (quickEditEvent is not null)
+            {
+                <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">
+                    <strong style="color: var(--ink);">@quickEditEvent.PlayerName</strong> &middot; @(quickEditEvent.ClubName ?? "Club inconnu") &middot; @quickEditEvent.Category
+                </div>
+            }
+        </Subtitle>
+        <ChildContent>
+            @if (quickEditEvent is not null && quickEditEvent.IsCancelled)
+            {
+                <div class="cancel-reason-box">
+                    <div class="cancel-reason-title">
+                        <svg viewBox="0 0 24 24" class="icon" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
+                        Séance annulée
+                    </div>
+                    @if (quickEditEvent.CancellationReason is { } currentReason)
+                    {
+                        var currentReasonInfo = TrainingOccurrenceHelper.CancellationReasons.First(r => r.Value == currentReason);
+                        <div class="cancel-reason-opt @currentReasonInfo.CssClass selected">
+                            <span class="cancel-reason-radio"><span class="dot"></span></span>
+                            <span class="cancel-reason-sw"></span>
+                            <span>
+                                <span class="cancel-reason-label">@currentReasonInfo.Label</span>
+                                <span class="cancel-reason-desc">@currentReasonInfo.Description</span>
+                            </span>
+                        </div>
+                    }
+                    <div class="cancel-reason-actions">
+                        <button type="button" class="btn btn-primary" @onclick="ReactivateTrainingFromQuickEdit">Réactiver cette séance</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="quickForm" OnValidSubmit="SaveTrainingQuickEdit">
+                    <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+                        <div class="field" style="margin-bottom: 0;"><label>Heure de début</label><input type="time" @bind="quickForm.StartTime" /></div>
+                        <div class="field" style="margin-bottom: 0;"><label>Heure de fin</label><input type="time" @bind="quickForm.EndTime" /></div>
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Lieu</label>
+                        <input @bind="quickForm.Location" />
+                    </div>
+                    @if (editingTraining is not null)
+                    {
+                        <p class="empty-note" style="padding: 0 0 16px; display: flex; align-items: center; gap: 6px;">
+                            <svg viewBox="0 0 24 24" class="icon" style="width:13px;height:13px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                            Ce changement ne concerne que cette séance. Récurrence (@TrainingOccurrenceHelper.DaysLabel(editingTraining.Days).ToLower()) et période : à modifier ci-dessus dans le bloc "Entraînements".
+                        </p>
+                    }
+                    @if (quickFormError is not null)
+                    {
+                        <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@quickFormError</p>
+                    }
+                    @if (showCancelReasonPicker)
+                    {
+                        <div class="cancel-reason-box">
+                            <div class="cancel-reason-title">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:14px;height:14px;"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path></svg>
+                                Motif de l'annulation
+                            </div>
+                            <div class="cancel-reason-opts">
+                                @foreach (var reason in TrainingOccurrenceHelper.CancellationReasons)
+                                {
+                                    <button type="button" class="cancel-reason-opt @reason.CssClass @(selectedCancelReason == reason.Value ? "selected" : "")" @onclick="() => selectedCancelReason = reason.Value">
+                                        <span class="cancel-reason-radio"><span class="dot"></span></span>
+                                        <span class="cancel-reason-sw"></span>
+                                        <span>
+                                            <span class="cancel-reason-label">@reason.Label</span>
+                                            <span class="cancel-reason-desc">@reason.Description</span>
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                            @if (cancelReasonError is not null)
+                            {
+                                <p class="empty-note" style="color: var(--danger); padding: 8px 0 0;">@cancelReasonError</p>
+                            }
+                            <div class="cancel-reason-actions">
+                                <button type="button" class="btn btn-outline btn-sm" @onclick="CloseCancelReasonPicker">Retour</button>
+                                <button type="button" class="btn-danger-outline" @onclick="ConfirmCancelTrainingFromQuickEdit">Confirmer l'annulation</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                            <button type="button" class="btn-danger-outline" @onclick="OpenCancelReasonPicker">Annuler cette séance</button>
+                            <button class="btn btn-primary" type="submit">Enregistrer</button>
+                        </div>
+                    }
+                </EditForm>
+            }
+        </ChildContent>
+    </Modal>
+
+    <Modal @ref="trainingCreateModal" Label="Nouvel entraînement récurrent">
+        <ChildContent>
+            <EditForm Model="trainingForm" OnValidSubmit="AddTraining">
+                @if (availableSeasons.Count > 1)
+                {
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Enfant</label>
+                        <select @bind="trainingForm.SeasonId">
+                            @foreach (var s in availableSeasons)
+                            {
+                                <option value="@s.Id">@s.Player?.FirstName @s.Player?.LastName — @s.Club?.Name (@s.Label)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                @TrainingFields(trainingForm)
+                @if (trainingFormError is not null)
+                {
+                    <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@trainingFormError</p>
+                }
+                <button class="btn btn-primary" type="submit">Ajouter</button>
+            </EditForm>
+        </ChildContent>
+    </Modal>
+
+    <Modal @ref="trainingEditModal" Label="Modifier l'entraînement récurrent">
+        <ChildContent>
+            <EditForm Model="trainingEditForm" OnValidSubmit="SaveEditTraining">
+                @TrainingFields(trainingEditForm)
+                @if (trainingFormError is not null)
+                {
+                    <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@trainingFormError</p>
+                }
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+            </EditForm>
+        </ChildContent>
+    </Modal>
+</div>
+
+@code {
+    private enum CalendarViewMode { Month, Week }
+    private enum CalendarFilterType { Tournoi, Plateau, Training }
+
+    private CalendarViewMode view = CalendarViewMode.Month;
+    private DateOnly referenceDate = DateOnly.FromDateTime(DateTime.Today);
+    private List<Player> visiblePlayers = [];
+    private int selectedPlayerId;
+    private List<CalendarEvent> events = [];
+    private bool canManage;
+
+    // Filtre par type d'événement (Tournoi/Plateau/Entraînement), affiché en PC comme en mobile.
+    private readonly HashSet<CalendarFilterType> selectedTypeFilters = [CalendarFilterType.Tournoi, CalendarFilterType.Plateau, CalendarFilterType.Training];
+    private bool AllTypesSelected => selectedTypeFilters.Count == 3;
+    private IEnumerable<CalendarEvent> FilteredEvents => events.Where(e => selectedTypeFilters.Contains(FilterTypeOf(e)));
+
+    private static CalendarFilterType FilterTypeOf(CalendarEvent e) => e.Kind == CalendarEventKind.Training
+        ? CalendarFilterType.Training
+        : (e.EventType == EventType.Tournoi ? CalendarFilterType.Tournoi : CalendarFilterType.Plateau);
+
+    private static string TypeClassFor(CalendarFilterType type) => type switch
+    {
+        CalendarFilterType.Tournoi => "type-tournoi",
+        CalendarFilterType.Plateau => "type-plateau",
+        _ => "type-training"
+    };
+
+    private string FilterChipClass(CalendarFilterType type) => selectedTypeFilters.Contains(type)
+        ? $"cal-filter-chip event-tint {TypeClassFor(type)} active"
+        : "cal-filter-chip";
+
+    private void ToggleTypeFilter(CalendarFilterType type)
+    {
+        if (!selectedTypeFilters.Remove(type)) selectedTypeFilters.Add(type);
+    }
+
+    private void SelectAllTypeFilters()
+    {
+        selectedTypeFilters.Add(CalendarFilterType.Tournoi);
+        selectedTypeFilters.Add(CalendarFilterType.Plateau);
+        selectedTypeFilters.Add(CalendarFilterType.Training);
+    }
+
+    // Modale rapide "clic sur un entraînement" : change l'heure/le lieu de la règle récurrente entière.
+    private Modal? trainingQuickModal;
+    private CalendarEvent? quickEditEvent;
+    private Training? editingTraining;
+    private TrainingQuickForm quickForm = new();
+    private string? quickFormError;
+    private bool showCancelReasonPicker;
+    private TrainingCancellationReason? selectedCancelReason;
+    private string? cancelReasonError;
+
+    // Bouton "+" unique proposant Tournoi/Plateau/Entraînement depuis le calendrier.
+    private bool showEventMenu;
+    private TournamentForm tournamentForm = new();
+    private Modal? tournamentCreateModal;
+    private string? tournamentFormError;
+    private List<Season> NonEquitationSeasons => availableSeasons.Where(s => s.Sport != Sport.Equitation).ToList();
+
+    // Entraînement ponctuel (une seule occurrence, à la différence du bloc "Entraînements" récurrents ci-dessus).
+    private TrainingOccurrenceForm trainingOccurrenceForm = new();
+    private Modal? trainingOccurrenceCreateModal;
+    private string? trainingOccurrenceFormError;
+
+    // Entraînements récurrents (bloc déplacé depuis la fiche saison : géré ici pour tous les enfants).
+    private List<Training> trainings = [];
+    private List<Season> availableSeasons = [];
+    private TrainingForm trainingForm = new();
+    private TrainingForm trainingEditForm = new();
+    private Modal? trainingCreateModal;
+    private Modal? trainingEditModal;
+    private int editingTrainingId;
+    private string? trainingFormError;
+
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+
+    protected override async Task OnInitializedAsync()
+    {
+        visiblePlayers = await (await CurrentUser.GetVisiblePlayersAsync()).OrderBy(p => p.FirstName).ToListAsync();
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        await LoadEventsAsync();
+        await LoadTrainingsAsync();
+    }
+
+    private async Task OnPlayerFilterChangedAsync()
+    {
+        await LoadEventsAsync();
+        await LoadTrainingsAsync();
+    }
+
+    private async Task SetView(CalendarViewMode mode)
+    {
+        view = mode;
+        await LoadEventsAsync();
+    }
+
+    private async Task GoPrevious()
+    {
+        referenceDate = view == CalendarViewMode.Month ? referenceDate.AddMonths(-1) : referenceDate.AddDays(-7);
+        await LoadEventsAsync();
+    }
+
+    private async Task GoNext()
+    {
+        referenceDate = view == CalendarViewMode.Month ? referenceDate.AddMonths(1) : referenceDate.AddDays(7);
+        await LoadEventsAsync();
+    }
+
+    private async Task GoToday()
+    {
+        referenceDate = Today;
+        await LoadEventsAsync();
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        var (from, to) = RangeFor(view, referenceDate);
+        var all = await Calendar.GetEventsAsync(from, to);
+        events = selectedPlayerId == 0 ? all : all.Where(e => e.PlayerId == selectedPlayerId).ToList();
+    }
+
+    private async Task LoadTrainingsAsync()
+    {
+        var playerIds = visiblePlayers.Select(p => p.Id).ToHashSet();
+
+        var query = Db.Trainings
+            .Include(t => t.Season).ThenInclude(s => s!.Player)
+            .Include(t => t.Season).ThenInclude(s => s!.Club)
+            .Where(t => playerIds.Contains(t.Season!.PlayerId));
+        if (selectedPlayerId != 0) query = query.Where(t => t.Season!.PlayerId == selectedPlayerId);
+        trainings = await query.OrderBy(t => t.Season!.Player!.FirstName).ThenBy(t => t.StartDate).ToListAsync();
+
+        availableSeasons = await Db.Seasons
+            .Include(s => s.Player)
+            .Include(s => s.Club)
+            .Where(s => playerIds.Contains(s.PlayerId) && !s.IsArchived)
+            .OrderBy(s => s.Player!.FirstName)
+            .ToListAsync();
+    }
+
+    private static (DateOnly From, DateOnly To) RangeFor(CalendarViewMode mode, DateOnly reference) => mode switch
+    {
+        CalendarViewMode.Month => (GridStart(reference), GridStart(reference).AddDays(41)),
+        _ => (WeekStart(reference), WeekStart(reference).AddDays(6))
+    };
+
+    private static DateOnly GridStart(DateOnly reference)
+    {
+        var firstOfMonth = new DateOnly(reference.Year, reference.Month, 1);
+        var offset = ((int)firstOfMonth.DayOfWeek + 6) % 7;
+        return firstOfMonth.AddDays(-offset);
+    }
+
+    private static DateOnly WeekStart(DateOnly reference)
+    {
+        var offset = ((int)reference.DayOfWeek + 6) % 7;
+        return reference.AddDays(-offset);
+    }
+
+    private IEnumerable<DateOnly> MonthGridDays()
+    {
+        var start = GridStart(referenceDate);
+        for (var i = 0; i < 42; i++) yield return start.AddDays(i);
+    }
+
+    private IEnumerable<DateOnly> WeekDays()
+    {
+        var start = WeekStart(referenceDate);
+        for (var i = 0; i < 7; i++) yield return start.AddDays(i);
+    }
+
+    private List<CalendarEvent> EventsOn(DateOnly day) => FilteredEvents.Where(e => e.Date == day).ToList();
+
+    private string NavLabel() => view == CalendarViewMode.Week
+        ? $"{WeekStart(referenceDate):dd.MM} – {WeekStart(referenceDate).AddDays(6):dd.MM.yyyy}"
+        : $"{MonthName(referenceDate.Month)} {referenceDate.Year}";
+
+    private async Task GoToEvent(CalendarEvent e)
+    {
+        if (e.Kind == CalendarEventKind.Training)
+        {
+            if (canManage) await OpenTrainingQuickEdit(e);
+            return;
+        }
+        Navigation.NavigateTo($"/tournaments/{e.TournamentId}");
+    }
+
+    private async Task OpenTrainingQuickEdit(CalendarEvent e)
+    {
+        if (e.TrainingId is not { } trainingId) return;
+        editingTraining = await Db.Trainings.FindAsync(trainingId);
+        if (editingTraining is null) return;
+
+        quickEditEvent = e;
+        quickFormError = null;
+        quickForm = new TrainingQuickForm
+        {
+            // e.StartTime/EndTime/Location reflètent déjà l'éventuelle exception de cette date précise
+            // (CalendarService applique l'override sur l'occurrence avant de construire l'événement).
+            StartTime = e.StartTime ?? editingTraining.StartTime,
+            EndTime = e.EndTime ?? editingTraining.EndTime,
+            Location = e.Location
+        };
+        showCancelReasonPicker = false;
+        selectedCancelReason = null;
+        cancelReasonError = null;
+        trainingQuickModal?.Open();
+    }
+
+    private void OpenCancelReasonPicker()
+    {
+        showCancelReasonPicker = true;
+        selectedCancelReason = null;
+        cancelReasonError = null;
+    }
+
+    private void CloseCancelReasonPicker()
+    {
+        showCancelReasonPicker = false;
+        selectedCancelReason = null;
+        cancelReasonError = null;
+    }
+
+    /// <summary>Récupère (ou crée) l'exception ponctuelle pour cette date précise d'une règle récurrente —
+    /// jamais la règle elle-même, pour que l'action ne touche que cette occurrence.</summary>
+    private async Task<TrainingOccurrenceOverride> GetOrCreateOccurrenceOverrideAsync(int trainingId, DateOnly date)
+    {
+        var existing = await Db.TrainingOccurrenceOverrides
+            .FirstOrDefaultAsync(o => o.TrainingId == trainingId && o.Date == date);
+        if (existing is not null) return existing;
+
+        var created = new TrainingOccurrenceOverride { TrainingId = trainingId, Date = date };
+        Db.TrainingOccurrenceOverrides.Add(created);
+        return created;
+    }
+
+    private async Task SaveTrainingQuickEdit()
+    {
+        if (editingTraining is null || quickEditEvent is null) return;
+        quickFormError = null;
+
+        if (string.IsNullOrWhiteSpace(quickForm.Location))
+        {
+            quickFormError = "Indique un lieu.";
+            return;
+        }
+        if (quickForm.EndTime <= quickForm.StartTime)
+        {
+            quickFormError = "L'heure de fin doit être après l'heure de début.";
+            return;
+        }
+
+        var occurrenceOverride = await GetOrCreateOccurrenceOverrideAsync(editingTraining.Id, quickEditEvent.Date);
+        occurrenceOverride.IsCancelled = false;
+        occurrenceOverride.CancellationReason = null;
+        occurrenceOverride.StartTime = quickForm.StartTime;
+        occurrenceOverride.EndTime = quickForm.EndTime;
+        occurrenceOverride.Location = quickForm.Location.Trim();
+        await Db.SaveChangesAsync();
+        trainingQuickModal?.Close();
+        await LoadEventsAsync();
+    }
+
+    private async Task ConfirmCancelTrainingFromQuickEdit()
+    {
+        if (editingTraining is null || quickEditEvent is null) return;
+        if (selectedCancelReason is null)
+        {
+            cancelReasonError = "Choisis un motif.";
+            return;
+        }
+        cancelReasonError = null;
+
+        var occurrenceOverride = await GetOrCreateOccurrenceOverrideAsync(editingTraining.Id, quickEditEvent.Date);
+        occurrenceOverride.IsCancelled = true;
+        occurrenceOverride.CancellationReason = selectedCancelReason;
+        await Db.SaveChangesAsync();
+        trainingQuickModal?.Close();
+        showCancelReasonPicker = false;
+        selectedCancelReason = null;
+        editingTraining = null;
+        quickEditEvent = null;
+        await LoadEventsAsync();
+    }
+
+    private async Task ReactivateTrainingFromQuickEdit()
+    {
+        if (editingTraining is null || quickEditEvent is null) return;
+
+        var occurrenceOverride = await GetOrCreateOccurrenceOverrideAsync(editingTraining.Id, quickEditEvent.Date);
+        occurrenceOverride.IsCancelled = false;
+        occurrenceOverride.CancellationReason = null;
+        await Db.SaveChangesAsync();
+        trainingQuickModal?.Close();
+        editingTraining = null;
+        quickEditEvent = null;
+        await LoadEventsAsync();
+    }
+
+    private void ToggleEventMenu() => showEventMenu = !showEventMenu;
+
+    private void OpenCreateTournamentEvent(EventType eventType)
+    {
+        showEventMenu = false;
+        tournamentFormError = null;
+        var defaultSeason = selectedPlayerId != 0
+            ? NonEquitationSeasons.FirstOrDefault(s => s.PlayerId == selectedPlayerId)
+            : NonEquitationSeasons.FirstOrDefault();
+        tournamentForm = new TournamentForm
+        {
+            SeasonId = defaultSeason?.Id ?? 0,
+            EventType = eventType
+        };
+        tournamentCreateModal?.Open();
+    }
+
+    private async Task AddTournamentEvent()
+    {
+        if (!canManage) return;
+        tournamentFormError = null;
+
+        if (tournamentForm.SeasonId == 0)
+        {
+            tournamentFormError = "Sélectionne l'enfant concerné.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(tournamentForm.City))
+        {
+            tournamentFormError = "Indique une ville.";
+            return;
+        }
+
+        Db.Tournaments.Add(new Tournament
+        {
+            Name = string.IsNullOrWhiteSpace(tournamentForm.Name) ? null : tournamentForm.Name.Trim(),
+            EventType = tournamentForm.EventType,
+            City = tournamentForm.City.Trim(),
+            Date = DateOnly.FromDateTime(tournamentForm.Date),
+            KickoffTime = tournamentForm.KickoffTime,
+            SeasonId = tournamentForm.SeasonId
+        });
+        await Db.SaveChangesAsync();
+        tournamentCreateModal?.Close();
+        await LoadEventsAsync();
+    }
+
+    private void OpenCreateTraining()
+    {
+        showEventMenu = false;
+        trainingFormError = null;
+        var defaultSeason = selectedPlayerId != 0
+            ? availableSeasons.FirstOrDefault(s => s.PlayerId == selectedPlayerId)
+            : availableSeasons.FirstOrDefault();
+        trainingForm = new TrainingForm
+        {
+            SeasonId = defaultSeason?.Id ?? 0,
+            StartDate = defaultSeason?.StartDate ?? DateOnly.FromDateTime(DateTime.Today),
+            EndDate = defaultSeason?.EndDate
+        };
+        trainingCreateModal?.Open();
+    }
+
+    private void OpenCreateTrainingOccurrence()
+    {
+        showEventMenu = false;
+        trainingOccurrenceFormError = null;
+        var defaultSeason = selectedPlayerId != 0
+            ? availableSeasons.FirstOrDefault(s => s.PlayerId == selectedPlayerId)
+            : availableSeasons.FirstOrDefault();
+        trainingOccurrenceForm = new TrainingOccurrenceForm
+        {
+            SeasonId = defaultSeason?.Id ?? 0,
+            Date = referenceDate
+        };
+        trainingOccurrenceCreateModal?.Open();
+    }
+
+    private async Task AddTrainingOccurrence()
+    {
+        if (!canManage) return;
+        trainingOccurrenceFormError = null;
+
+        if (trainingOccurrenceForm.SeasonId == 0)
+        {
+            trainingOccurrenceFormError = "Sélectionne l'enfant concerné.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(trainingOccurrenceForm.Location))
+        {
+            trainingOccurrenceFormError = "Indique un lieu.";
+            return;
+        }
+        if (trainingOccurrenceForm.EndTime <= trainingOccurrenceForm.StartTime)
+        {
+            trainingOccurrenceFormError = "L'heure de fin doit être après l'heure de début.";
+            return;
+        }
+
+        Db.Trainings.Add(new Training
+        {
+            SeasonId = trainingOccurrenceForm.SeasonId,
+            Days = TrainingOccurrenceHelper.ToMask(trainingOccurrenceForm.Date.DayOfWeek),
+            StartTime = trainingOccurrenceForm.StartTime,
+            EndTime = trainingOccurrenceForm.EndTime,
+            Location = trainingOccurrenceForm.Location.Trim(),
+            StartDate = trainingOccurrenceForm.Date,
+            EndDate = trainingOccurrenceForm.Date
+        });
+        await Db.SaveChangesAsync();
+        trainingOccurrenceCreateModal?.Close();
+        await LoadTrainingsAsync();
+        await LoadEventsAsync();
+    }
+
+    private async Task AddTraining()
+    {
+        if (!canManage) return;
+        trainingFormError = null;
+
+        if (trainingForm.SeasonId == 0)
+        {
+            trainingFormError = "Sélectionne l'enfant concerné.";
+            return;
+        }
+        if (trainingForm.Days.Count == 0)
+        {
+            trainingFormError = "Sélectionne au moins un jour de la semaine.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(trainingForm.Location))
+        {
+            trainingFormError = "Indique un lieu.";
+            return;
+        }
+        if (trainingForm.EndTime <= trainingForm.StartTime)
+        {
+            trainingFormError = "L'heure de fin doit être après l'heure de début.";
+            return;
+        }
+
+        Db.Trainings.Add(new Training
+        {
+            SeasonId = trainingForm.SeasonId,
+            Days = trainingForm.Days.Aggregate(DaysOfWeekMask.None, (acc, d) => acc | d),
+            StartTime = trainingForm.StartTime,
+            EndTime = trainingForm.EndTime,
+            Location = trainingForm.Location.Trim(),
+            StartDate = trainingForm.StartDate,
+            EndDate = trainingForm.EndDate
+        });
+        await Db.SaveChangesAsync();
+        trainingCreateModal?.Close();
+        await LoadTrainingsAsync();
+        await LoadEventsAsync();
+    }
+
+    private void OpenEditTraining(Training t)
+    {
+        if (!canManage) return;
+        trainingFormError = null;
+        editingTrainingId = t.Id;
+        trainingEditForm = new TrainingForm
+        {
+            SeasonId = t.SeasonId,
+            Days = TrainingOccurrenceHelper.WeekOrder.Where(d => t.Days.HasFlag(d.Mask)).Select(d => d.Mask).ToHashSet(),
+            StartTime = t.StartTime,
+            EndTime = t.EndTime,
+            Location = t.Location,
+            StartDate = t.StartDate,
+            EndDate = t.EndDate
+        };
+        trainingEditModal?.Open();
+    }
+
+    private async Task SaveEditTraining()
+    {
+        if (!canManage) return;
+        trainingFormError = null;
+
+        if (trainingEditForm.Days.Count == 0)
+        {
+            trainingFormError = "Sélectionne au moins un jour de la semaine.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(trainingEditForm.Location))
+        {
+            trainingFormError = "Indique un lieu.";
+            return;
+        }
+        if (trainingEditForm.EndTime <= trainingEditForm.StartTime)
+        {
+            trainingFormError = "L'heure de fin doit être après l'heure de début.";
+            return;
+        }
+
+        var training = await Db.Trainings.FindAsync(editingTrainingId);
+        if (training is null) return;
+
+        training.Days = trainingEditForm.Days.Aggregate(DaysOfWeekMask.None, (acc, d) => acc | d);
+        training.StartTime = trainingEditForm.StartTime;
+        training.EndTime = trainingEditForm.EndTime;
+        training.Location = trainingEditForm.Location.Trim();
+        training.StartDate = trainingEditForm.StartDate;
+        training.EndDate = trainingEditForm.EndDate;
+
+        await Db.SaveChangesAsync();
+        trainingEditModal?.Close();
+        await LoadTrainingsAsync();
+        await LoadEventsAsync();
+    }
+
+    private async Task DeleteTraining(int trainingId)
+    {
+        if (!canManage) return;
+        var training = await Db.Trainings.FindAsync(trainingId);
+        if (training is null) return;
+
+        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer cet entraînement récurrent ({TrainingOccurrenceHelper.DaysLabel(training.Days)}) ?")) return;
+
+        Db.Trainings.Remove(training);
+        await Db.SaveChangesAsync();
+        await LoadTrainingsAsync();
+        await LoadEventsAsync();
+    }
+
+    private void ToggleDay(TrainingForm form, DaysOfWeekMask day)
+    {
+        if (!form.Days.Remove(day)) form.Days.Add(day);
+    }
+
+    private RenderFragment TrainingFields(TrainingForm targetForm) => @<div>
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Jours de la semaine</label>
+            <div class="day-toggle-row">
+                @foreach (var d in TrainingOccurrenceHelper.WeekOrder)
+                {
+                    <button type="button" class="day-toggle @(targetForm.Days.Contains(d.Mask) ? "on" : "")" @onclick="() => ToggleDay(targetForm, d.Mask)">@d.Short</button>
+                }
+            </div>
+        </div>
+        <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+            <div class="field" style="margin-bottom: 0;"><label>Heure de début</label><input type="time" @bind="targetForm.StartTime" /></div>
+            <div class="field" style="margin-bottom: 0;"><label>Heure de fin</label><input type="time" @bind="targetForm.EndTime" /></div>
+        </div>
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Lieu</label>
+            <input @bind="targetForm.Location" placeholder="Stade Municipal" />
+        </div>
+        <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+            <div class="field" style="margin-bottom: 0;"><label>Du</label><input type="date" @bind="targetForm.StartDate" /></div>
+            <div class="field" style="margin-bottom: 0;"><label>Au (optionnel)</label><input type="date" @bind="targetForm.EndDate" /></div>
+        </div>
+    </div>;
+
+    private static string TypeClass(CalendarEvent e) => e.Kind switch
+    {
+        CalendarEventKind.Training => "type-training",
+        _ => e.EventType == EventType.Tournoi ? "type-tournoi" : "type-plateau"
+    };
+
+    private static string CancelledClasses(CalendarEvent e) => e.IsCancelled
+        ? $"event-cancelled {(e.CancellationReason is { } r ? TrainingOccurrenceHelper.CancellationReasonCssClass(r) : "")}"
+        : "";
+
+    private static string ChipLabel(CalendarEvent e) => e.Kind == CalendarEventKind.Training ? "Entraînement" : e.Title;
+
+    private static string ChipTitle(CalendarEvent e)
+    {
+        var label = e.StartTime is { } t ? $"{ChipLabel(e)} · {t:HH:mm} · {e.PlayerName}" : $"{ChipLabel(e)} · {e.PlayerName}";
+        return e.IsCancelled && e.CancellationReason is { } reason
+            ? $"{label} · {TrainingOccurrenceHelper.CancellationReasonLabel(reason)}"
+            : label;
+    }
+
+    private static string TimeAndPlayer(CalendarEvent e)
+    {
+        var parts = new List<string>();
+        if (e.StartTime is { } start) parts.Add(e.EndTime is { } end ? $"{start:HH:mm} – {end:HH:mm}" : $"{start:HH:mm}");
+        parts.Add(e.PlayerName);
+        parts.Add(e.Location);
+        return string.Join(" · ", parts);
+    }
+
+    private static string PlayerInitials(Player? player)
+    {
+        if (player is null) return "?";
+        var a = player.FirstName.Length > 0 ? player.FirstName[0].ToString() : "";
+        var b = player.LastName.Length > 0 ? player.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    private static readonly string[] MonthNames =
+        ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+    private static string MonthName(int month) => MonthNames[month - 1];
+
+    private static readonly string[] DayNames = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+    private static string DayLabel(DateOnly date) => $"{DayNames[((int)date.DayOfWeek + 6) % 7]} {date.Day} {MonthName(date.Month).ToLower()}";
+
+    private class TrainingQuickForm
+    {
+        public TimeOnly StartTime { get; set; }
+        public TimeOnly EndTime { get; set; }
+        public string Location { get; set; } = "";
+    }
+
+    private class TrainingForm
+    {
+        public int SeasonId { get; set; }
+        public HashSet<DaysOfWeekMask> Days { get; set; } = [];
+        public TimeOnly StartTime { get; set; } = new(18, 0);
+        public TimeOnly EndTime { get; set; } = new(19, 30);
+        public string Location { get; set; } = "";
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly? EndDate { get; set; }
+    }
+
+    private class TournamentForm
+    {
+        public int SeasonId { get; set; }
+        public string Name { get; set; } = "";
+        public EventType EventType { get; set; } = EventType.Tournoi;
+        public string City { get; set; } = "";
+        public DateTime Date { get; set; } = DateTime.Today;
+        public TimeOnly? KickoffTime { get; set; }
+    }
+
+    private class TrainingOccurrenceForm
+    {
+        public int SeasonId { get; set; }
+        public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public TimeOnly StartTime { get; set; } = new(18, 0);
+        public TimeOnly EndTime { get; set; } = new(19, 30);
+        public string Location { get; set; } = "";
+    }
+}

@@ -1,0 +1,63 @@
+@* Déclencheur de création : carte fantôme (desktop) et/ou bouton flottant (mobile, ou desktop si Floating). *@
+
+@if (!Floating)
+{
+    <button class="ghost-card @(Compact ? "compact" : "") @(Emphasized ? "emphasized" : "")" type="button" @onclick="Open" aria-label="@Label">
+        <span class="ghost-card-icon">
+            <svg viewBox="0 0 24 24" class="icon"><path d="M12 5v14M5 12h14"></path></svg>
+        </span>
+        <span>@Label</span>
+    </button>
+}
+
+<button class="fab @(Floating ? "" : "fab-mobile-only") @(Emphasized ? "pulse" : "")" type="button" @onclick="Open" aria-label="@Label">
+    <svg viewBox="0 0 24 24" class="icon"><path d="M12 5v14M5 12h14"></path></svg>
+</button>
+
+@if (_isOpen)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div class="modal-header-title">
+                    <span class="section-title">@Label</span>
+                    @if (Subtitle is not null)
+                    {
+                        @Subtitle
+                    }
+                </div>
+                <button class="icon-btn" type="button" @onclick="Close" aria-label="Fermer">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                @ChildContent
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Label { get; set; } = "Ajouter";
+    [Parameter] public bool Compact { get; set; }
+    [Parameter] public bool Floating { get; set; }
+    [Parameter] public bool Emphasized { get; set; }
+    [Parameter] public RenderFragment? Subtitle { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback OnOpen { get; set; }
+
+    private bool _isOpen;
+
+    public async Task Open()
+    {
+        _isOpen = true;
+        await OnOpen.InvokeAsync();
+        StateHasChanged();
+    }
+
+    public void Close()
+    {
+        _isOpen = false;
+        StateHasChanged();
+    }
+}

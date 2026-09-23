@@ -1,0 +1,461 @@
+@page "/players"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject NavigationManager Navigation
+@inject UploadsPathProvider Uploads
+@inject IJSRuntime JS
+@inject CurrentUserService CurrentUser
+
+<PageTitle>Joueurs</PageTitle>
+
+<div class="container">
+    <PageHero Eyebrow="Effectif" Title="Joueurs" Subtitle="Les joueurs suivis par la famille." />
+
+    @if (deleteError is not null)
+    {
+        <div class="alert alert-danger">@deleteError</div>
+    }
+
+    <details class="collapsible" open>
+        <summary>
+            <span class="section-title" style="margin-bottom: 0;">
+                <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><path d="M20 6L9 17l-5-5"></path></svg>
+                Actifs
+                <span class="pill pill-gold" style="margin-left: 4px;">@activePlayers.Count</span>
+            </span>
+            <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+        </summary>
+        <div class="player-grid" style="margin-top: 14px;">
+            @if (activePlayers.Count == 0)
+            {
+                <p class="empty-note desktop-hide-note">Aucun joueur actif pour le moment.</p>
+            }
+            @foreach (var player in activePlayers)
+            {
+                @PlayerCard(player)
+            }
+            @if (canManage)
+            {
+                <CreateFab @ref="fab" Label="Nouveau joueur" Emphasized="@(activePlayers.Count == 0)">
+                    <EditForm Model="form" OnValidSubmit="AddPlayer">
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Prénom</label>
+                            <input @bind="form.FirstName" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Nom</label>
+                            <input @bind="form.LastName" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Date de naissance</label>
+                            <input type="date" @bind="form.BirthDate" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Poste</label>
+                            <select @bind="form.Position">
+                                <option>Gardien</option>
+                                <option>Défenseur</option>
+                                <option>Milieu</option>
+                                <option>Attaquant</option>
+                            </select>
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Numéro préféré</label>
+                            <input type="number" min="1" max="99" @bind="form.PreferredNumber" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Photo</label>
+                            <FilePicker Accept="image/*" Title="Glissez une photo ici" Hint="PNG, JPG..." OnFileSelected="f => selectedPhoto = f" />
+                        </div>
+                        <button class="btn btn-primary" type="submit">Ajouter</button>
+                    </EditForm>
+                </CreateFab>
+            }
+        </div>
+    </details>
+
+    <Modal @ref="transferModal" Label="@(transferPlayer is null ? "Transfert" : $"Transfert de {transferPlayer.FirstName} {transferPlayer.LastName}")">
+        @if (transferPlayer is not null)
+        {
+            <EditForm Model="transferForm" OnValidSubmit="SaveTransfer">
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Nouveau club</label>
+                    <select @bind="transferForm.ClubId">
+                        <option value="0">— Sans club —</option>
+                        @foreach (var club in clubs)
+                        {
+                            <option value="@club.Id">@club.Name@(club.Id == transferCurrentClubId ? " (club actuel)" : "")</option>
+                        }
+                    </select>
+                </div>
+                <p class="empty-note" style="padding: 0 0 8px;">Le club actuel sera clôturé aujourd'hui et le nouveau club démarrera à la même date. L'historique reste conservé.</p>
+                @if (transferError is not null)
+                {
+                    <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@transferError</p>
+                }
+                <button class="btn btn-primary" type="submit">Valider le transfert</button>
+            </EditForm>
+        }
+    </Modal>
+
+    @if (inactivePlayers.Count > 0)
+    {
+        <details class="collapsible" style="margin-top: 18px;">
+            <summary>
+                <span class="section-title" style="margin-bottom: 0;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--muted);"><circle cx="12" cy="12" r="10"></circle><path d="M4.9 4.9l14.2 14.2"></path></svg>
+                    Inactifs
+                    <span class="pill" style="margin-left: 4px;">@inactivePlayers.Count</span>
+                </span>
+                <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+            </summary>
+            <div class="player-grid" style="margin-top: 14px;">
+                @foreach (var player in inactivePlayers)
+                {
+                    @PlayerCard(player)
+                }
+            </div>
+        </details>
+    }
+</div>
+
+@code {
+    private List<Player> players = [];
+    private List<Player> activePlayers = [];
+    private List<Player> inactivePlayers = [];
+    private PlayerForm form = new();
+    private IBrowserFile? selectedPhoto;
+    private CreateFab? fab;
+    private string? deleteError;
+    private Dictionary<int, List<Club>> currentClubs = new();
+    private List<Club> clubs = [];
+    private bool canManage;
+    private int currentUserId;
+    private int? familyAdminId;
+    private Modal? transferModal;
+    private Player? transferPlayer;
+    private int transferCurrentClubId;
+    private TransferForm transferForm = new();
+    private string? transferError;
+
+    private const string DefaultJerseyColor = "#1D4ED8";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await CurrentUser.GetCurrentUserAsync();
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        currentUserId = user.Id;
+        familyAdminId = user.Role == UserRole.Admin ? user.Id : user.CreatedByAdminId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var visiblePlayers = await CurrentUser.GetVisiblePlayersAsync();
+        players = await visiblePlayers.OrderBy(p => p.FirstName).ToListAsync();
+        activePlayers = players.Where(p => p.IsActive).ToList();
+        inactivePlayers = players.Where(p => !p.IsActive).ToList();
+
+        var playerIds = players.Select(p => p.Id).ToList();
+        var memberships = await Db.PlayerClubs
+            .Include(m => m.Club)
+            .Where(m => playerIds.Contains(m.PlayerId))
+            .ToListAsync();
+
+        currentClubs = players.ToDictionary(
+            p => p.Id,
+            p => memberships
+                .Where(m => m.PlayerId == p.Id && m.EndDate == null)
+                .Select(m => m.Club!)
+                .Where(c => c is not null)
+                .OrderBy(c => c.Name)
+                .ToList());
+
+        clubs = await Db.Clubs.OrderBy(c => c.Name).ToListAsync();
+    }
+
+    private string GetJerseyColor(Player player)
+    {
+        if (currentClubs.TryGetValue(player.Id, out var playerClubs) && playerClubs.Count > 0)
+        {
+            return playerClubs[0].JerseyColor;
+        }
+
+        return DefaultJerseyColor;
+    }
+
+
+    private async Task AddPlayer()
+    {
+        if (!canManage) return;
+        if (string.IsNullOrWhiteSpace(form.FirstName) || string.IsNullOrWhiteSpace(form.LastName)) return;
+
+        string? photoPath = null;
+        if (selectedPhoto is not null)
+        {
+            photoPath = await FileStorage.SavePhotoAsync(selectedPhoto, Uploads.Root, "players");
+        }
+
+        var newPlayer = new Player
+        {
+            FirstName = form.FirstName.Trim(),
+            LastName = form.LastName.Trim(),
+            BirthDate = DateOnly.FromDateTime(form.BirthDate),
+            Position = form.Position,
+            PreferredNumber = form.PreferredNumber,
+            PhotoPath = photoPath,
+            OwnerAdminId = familyAdminId
+        };
+
+        if (familyAdminId != currentUserId)
+        {
+            // Le créateur est un compte famille (User/Consultant) : on le lie pour qu'il voie le joueur qu'il vient de créer.
+            var creator = await Db.Users.FindAsync(currentUserId);
+            if (creator is not null) newPlayer.Users.Add(creator);
+        }
+
+        Db.Players.Add(newPlayer);
+        await Db.SaveChangesAsync();
+
+        form = new PlayerForm();
+        selectedPhoto = null;
+        fab?.Close();
+        await LoadAsync();
+    }
+
+    private void GoToPlayer(int id) => Navigation.NavigateTo($"/players/{id}");
+
+    private async Task DeletePlayer(int id)
+    {
+        if (!canManage) return;
+        deleteError = null;
+        var player = players.FirstOrDefault(p => p.Id == id);
+        if (player is null) return;
+
+        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {player.FirstName} {player.LastName} ?")) return;
+
+        Db.ChangeTracker.Clear();
+
+        var hasClub = await Db.PlayerClubs.AnyAsync(m => m.PlayerId == id);
+        var hasSeason = await Db.Seasons.AnyAsync(s => s.PlayerId == id);
+        if (hasClub || hasSeason)
+        {
+            deleteError = $"Impossible de supprimer '{player.FirstName} {player.LastName}' : il a encore des clubs ou des saisons enregistrés.";
+            return;
+        }
+
+        var entity = await Db.Players.FindAsync(id);
+        if (entity is null) return;
+
+        Db.Players.Remove(entity);
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private async Task ToggleActive(Player player)
+    {
+        if (!canManage) return;
+        var question = player.IsActive
+            ? $"Marquer {player.FirstName} {player.LastName} comme inactif ?"
+            : $"Réactiver {player.FirstName} {player.LastName} ?";
+        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+
+        var entity = await Db.Players.FindAsync(player.Id);
+        if (entity is null) return;
+        entity.IsActive = !entity.IsActive;
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private void OpenTransfer(Player player)
+    {
+        if (!canManage) return;
+        transferPlayer = player;
+        transferError = null;
+        transferCurrentClubId = currentClubs.TryGetValue(player.Id, out var playerClubs) && playerClubs.Count > 0 ? playerClubs[0].Id : 0;
+        transferForm = new TransferForm { ClubId = transferCurrentClubId };
+        transferModal?.Open();
+    }
+
+    private async Task SaveTransfer()
+    {
+        if (!canManage || transferPlayer is null) return;
+        transferError = null;
+
+        if (transferForm.ClubId == transferCurrentClubId)
+        {
+            transferError = "Choisis un club différent du club actuel.";
+            return;
+        }
+
+        // Un joueur peut avoir plusieurs clubs actifs en même temps : on ne clôture que celui affiché comme
+        // "club actuel" dans ce formulaire (transferCurrentClubId), jamais les autres appartenances actives.
+        var currentMembership = transferCurrentClubId == 0
+            ? null
+            : await Db.PlayerClubs.Include(m => m.Club)
+                .FirstOrDefaultAsync(m => m.PlayerId == transferPlayer.Id && m.ClubId == transferCurrentClubId && m.EndDate == null);
+        var oldClubName = currentMembership?.Club?.Name;
+        var newClubName = clubs.FirstOrDefault(c => c.Id == transferForm.ClubId)?.Name;
+
+        var question = oldClubName is null
+            ? $"Assigner {transferPlayer.FirstName} {transferPlayer.LastName} à {newClubName} aujourd'hui ?"
+            : newClubName is null
+                ? $"Retirer {transferPlayer.FirstName} {transferPlayer.LastName} de {oldClubName} aujourd'hui ?"
+                : $"Faire passer {transferPlayer.FirstName} {transferPlayer.LastName} de {oldClubName} à {newClubName} aujourd'hui ?";
+        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (currentMembership is not null)
+        {
+            var membershipEntity = await Db.PlayerClubs.FindAsync(currentMembership.Id);
+            if (membershipEntity is not null) membershipEntity.EndDate = today;
+        }
+        if (transferForm.ClubId != 0)
+        {
+            Db.PlayerClubs.Add(new PlayerClub { PlayerId = transferPlayer.Id, ClubId = transferForm.ClubId, StartDate = today });
+        }
+        await Db.SaveChangesAsync();
+
+        transferModal?.Close();
+        transferPlayer = null;
+        await LoadAsync();
+    }
+
+    private static int Age(DateOnly birthDate)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var age = today.Year - birthDate.Year;
+        if (birthDate > today.AddYears(-age)) age--;
+        return age;
+    }
+
+    private static string ClubAcronym(Club club)
+    {
+        if (!string.IsNullOrWhiteSpace(club.Acronym)) return club.Acronym.ToUpper();
+        var parts = club.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? string.Concat(parts.Select(p => p[0])).ToUpper()[..Math.Min(3, parts.Length)]
+            : club.Name[..Math.Min(2, club.Name.Length)].ToUpper();
+    }
+
+    private static string Initials(Player p)
+    {
+        var a = p.FirstName.Length > 0 ? p.FirstName[0].ToString() : "";
+        var b = p.LastName.Length > 0 ? p.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    private static RenderFragment PositionIcon(string position) => position switch
+    {
+        "Gardien" => @<svg viewBox="0 0 24 24" class="icon"><path d="M7 8V5a2 2 0 0 1 4 0v3"></path><path d="M11 8V4a2 2 0 0 1 4 0v4"></path><path d="M15 8V6a2 2 0 0 1 4 0v6a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5v-2a2 2 0 0 1 4 0"></path></svg>,
+        "Défenseur" => @<svg viewBox="0 0 24 24" class="icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>,
+        "Milieu" => @<svg viewBox="0 0 24 24" class="icon"><path d="M16 3h5v5"></path><path d="M4 20L21 3"></path><path d="M21 16v5h-5"></path><path d="M15 15l6 6"></path><path d="M4 4l5 5"></path></svg>,
+        "Attaquant" => @<svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="5"></circle><circle cx="12" cy="12" r="1"></circle></svg>,
+        _ => @<svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="9"></circle></svg>
+    };
+
+    private RenderFragment PlayerCard(Player player) => @<div class="player-card @(player.IsActive ? "featured" : "")" @onclick="() => GoToPlayer(player.Id)">
+        @{
+            currentClubs.TryGetValue(player.Id, out var playerClubList);
+            playerClubList ??= [];
+            var primaryClub = playerClubList.Count > 0 ? playerClubList[0] : null;
+        }
+        <div class="card-crest">
+            @if (player.IsActive)
+            {
+                <svg viewBox="0 0 24 24" class="mini-ball" fill="#fff"><circle cx="12" cy="12" r="10.5"></circle><path d="M12 6l3.6 2.6-1.4 4.2h-4.4l-1.4-4.2z" fill="#12201a"></path></svg>
+            }
+            <div class="card-badge">
+                @if (!string.IsNullOrEmpty(player.PhotoPath))
+                {
+                    <img src="@player.PhotoPath" alt="@player.FirstName @player.LastName" />
+                }
+                else if (player.PreferredNumber is not null)
+                {
+                    <svg viewBox="0 0 36 36" width="44" height="44">
+                        <path d="M11 3 L2 9 L6 16 L9.5 13.5 L9.5 33 H26.5 V13.5 L30 16 L34 9 L25 3 L21.5 5.5 A4.5 4.5 0 0 1 14.5 5.5 Z"
+                              fill="@GetJerseyColor(player)" stroke="rgba(0,0,0,0.18)" stroke-width="1"></path>
+                        <text x="18" y="24" font-family="var(--font-display)" font-size="13" fill="#fff" text-anchor="middle">@player.PreferredNumber</text>
+                    </svg>
+                }
+                else
+                {
+                    @Initials(player)
+                }
+            </div>
+            @if (string.IsNullOrEmpty(player.PhotoPath) && player.PreferredNumber is not null && primaryClub is not null)
+            {
+                <span class="club-acronym-caption">@ClubAcronym(primaryClub)</span>
+            }
+        </div>
+        <div class="card-body">
+            <div class="card-title-row">
+                <div class="card-title">@player.FirstName @player.LastName</div>
+                <span class="position-icon" title="@player.Position" aria-label="@player.Position">
+                    @PositionIcon(player.Position)
+                </span>
+            </div>
+            <div class="card-line">
+                <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                <span>@Age(player.BirthDate) ans</span>
+            </div>
+            @if (playerClubList.Count > 0)
+            {
+                @foreach (var club in playerClubList)
+                {
+                    <div class="card-line">
+                        @if (!string.IsNullOrEmpty(club.LogoPath))
+                        {
+                            <img src="@club.LogoPath" alt="" class="club-logo-mini" />
+                        }
+                        <span>@club.Name</span>
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="card-line muted">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    <span>Sans club</span>
+                </div>
+            }
+            @if (canManage)
+            {
+                <div class="card-actions-row">
+                    <button class="icon-action transfer" @onclick:stopPropagation="true" @onclick="() => OpenTransfer(player)" aria-label="Changer de club" title="Changer de club">
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M17 3l4 4-4 4"></path><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><path d="M7 21l-4-4 4-4"></path><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                        <span>Changer de club</span>
+                    </button>
+                    <button class="icon-action" @onclick:stopPropagation="true" @onclick="() => ToggleActive(player)" aria-label="@(player.IsActive ? "Marquer inactif" : "Réactiver")" title="@(player.IsActive ? "Marquer inactif" : "Réactiver")">
+                        @if (player.IsActive)
+                        {
+                            <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="5" rx="1"></rect><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"></path><path d="M10 13h4"></path></svg>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" class="icon"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path></svg>
+                        }
+                    </button>
+                    <button class="icon-action delete" @onclick:stopPropagation="true" @onclick="() => DeletePlayer(player.Id)" aria-label="Supprimer" title="Supprimer">
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                    </button>
+                </div>
+            }
+        </div>
+    </div>;
+
+    private class PlayerForm
+    {
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public DateTime BirthDate { get; set; } = DateTime.Today.AddYears(-10);
+        public string Position { get; set; } = "Milieu";
+        public int? PreferredNumber { get; set; }
+    }
+
+    private class TransferForm
+    {
+        public int ClubId { get; set; }
+    }
+}

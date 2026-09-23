@@ -1,0 +1,15 @@
+services:
+  footstats:
+    build: ./FootStats.Web
+    container_name: footstats
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - footstats-data:/data
+    environment:
+      - AdminUser__Username=admin
+      - AdminUser__Password=change-moi-en-production
+
+volumes:
+  footstats-data:

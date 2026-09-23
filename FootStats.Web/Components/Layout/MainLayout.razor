@@ -1,0 +1,134 @@
+@inherits LayoutComponentBase
+@implements IAsyncDisposable
+@using System.Security.Claims
+@using FootStats.Web.Models
+@inject CurrentUserService CurrentUser
+@inject NavigationManager Navigation
+
+<div class="app-shell">
+    <div class="topbar">
+        <NavMenu />
+        <AuthorizeView>
+            <Authorized>
+                <details class="user-menu">
+                    <summary class="btn-logout" aria-label="@FullName(context.User)">
+                        <span class="avatar">@Initials(context.User)</span>
+                        <span class="btn-logout-text">
+                            <span class="btn-logout-label">@FullName(context.User)</span>
+                            <span class="btn-logout-role">@RoleLabel(context.User)</span>
+                        </span>
+                        <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+                    </summary>
+                    <div class="user-menu-panel">
+                        <div class="user-menu-header">
+                            <span class="btn-logout-label">@FullName(context.User)</span>
+                            <span class="btn-logout-role">@RoleLabel(context.User)</span>
+                        </div>
+                        <form method="post" action="/account/logout">
+                            <button type="submit" class="user-menu-logout">
+                                <svg viewBox="0 0 24 24" class="icon"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path></svg>
+                                Se déconnecter
+                            </button>
+                        </form>
+                    </div>
+                </details>
+            </Authorized>
+        </AuthorizeView>
+    </div>
+
+    <main>
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private PeriodicTimer? sessionCheckTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckSessionStillValidAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            sessionCheckTimer = new PeriodicTimer(TimeSpan.FromSeconds(20));
+            _ = PollSessionAsync();
+        }
+    }
+
+    /// <summary>Tant que ce circuit Blazor Server reste ouvert, revérifie périodiquement que le compte connecté
+    /// existe toujours et est actif : coupe la session dès qu'un Admin supprime ou révoque ce compte pendant qu'il
+    /// est connecté, plutôt que de laisser planter la prochaine requête de données.</summary>
+    private async Task PollSessionAsync()
+    {
+        try
+        {
+            while (sessionCheckTimer is not null && await sessionCheckTimer.WaitForNextTickAsync())
+            {
+                await CheckSessionStillValidAsync();
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private async Task CheckSessionStillValidAsync()
+    {
+        if (!await CurrentUser.IsCurrentSessionValidAsync())
+        {
+            Navigation.NavigateTo("/account/force-logout", forceLoad: true);
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        sessionCheckTimer?.Dispose();
+        sessionCheckTimer = null;
+        return ValueTask.CompletedTask;
+    }
+
+    private static string Initials(ClaimsPrincipal principal)
+    {
+        var firstName = principal.FindFirst(ClaimTypes.GivenName)?.Value;
+        var lastName = principal.FindFirst(ClaimTypes.Surname)?.Value;
+
+        if (string.IsNullOrEmpty(firstName) && string.IsNullOrEmpty(lastName))
+        {
+            return principal.Identity?.Name?[..1].ToUpper() ?? "";
+        }
+
+        var a = !string.IsNullOrEmpty(firstName) ? firstName[..1] : "";
+        var b = !string.IsNullOrEmpty(lastName) ? lastName[..1] : "";
+        return (a + b).ToUpper();
+    }
+
+    private static string FullName(ClaimsPrincipal principal)
+    {
+        var firstName = principal.FindFirst(ClaimTypes.GivenName)?.Value;
+        var lastName = principal.FindFirst(ClaimTypes.Surname)?.Value;
+        var name = $"{firstName} {lastName}".Trim();
+        return string.IsNullOrEmpty(name) ? principal.Identity?.Name ?? "" : name;
+    }
+
+    private static string RoleLabel(ClaimsPrincipal principal)
+    {
+        var role = principal.FindFirst(ClaimTypes.Role)?.Value;
+        return Enum.TryParse<UserRole>(role, out var parsed)
+            ? parsed switch
+            {
+                UserRole.SuperAdmin => "Super administrateur",
+                UserRole.Admin => "Administrateur",
+                UserRole.User => "Utilisateur",
+                UserRole.Consultant => "Consultant (lecture seule)",
+                _ => ""
+            }
+            : "";
+    }
+}

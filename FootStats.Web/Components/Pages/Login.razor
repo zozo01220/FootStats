@@ -1,0 +1,156 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@layout Layout.EmptyLayout
+@inject IConfiguration Configuration
+
+<PageTitle>Connexion - FootStats</PageTitle>
+
+<div class="login-shell">
+    <div class="login-pitch">
+        <!-- ballon flottant -->
+        <div class="hero-ball" style="right: 40px; top: 40px; width: 190px; height: 190px; z-index: 1;">
+            <svg viewBox="0 0 200 200" width="190" height="190">
+                <defs>
+                    <radialGradient id="loginBallShade" cx="35%" cy="30%" r="75%">
+                        <stop offset="0%" stop-color="#ffffff"></stop>
+                        <stop offset="55%" stop-color="#eeece2"></stop>
+                        <stop offset="100%" stop-color="#c9c6b8"></stop>
+                    </radialGradient>
+                    <radialGradient id="loginBallShine" cx="32%" cy="26%" r="30%">
+                        <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"></stop>
+                        <stop offset="100%" stop-color="#ffffff" stop-opacity="0"></stop>
+                    </radialGradient>
+                </defs>
+                <circle cx="100" cy="100" r="92" fill="url(#loginBallShade)" stroke="#0f1a12" stroke-width="2.5"></circle>
+                <polygon points="100,58 118,72 111,94 89,94 82,72" fill="#12201a"></polygon>
+                <g stroke="#12201a" stroke-width="3.4" fill="none" stroke-linecap="round">
+                    <path d="M100 58 L100 26"></path>
+                    <path d="M118 72 L146 54"></path>
+                    <path d="M111 94 L140 108"></path>
+                    <path d="M89 94 L60 108"></path>
+                    <path d="M82 72 L54 54"></path>
+                </g>
+                <g fill="#12201a">
+                    <polygon points="100,26 112,16 108,2 92,2 88,16"></polygon>
+                    <polygon points="146,54 162,50 168,35 156,25 142,34"></polygon>
+                    <polygon points="140,108 154,118 150,134 133,134 128,118"></polygon>
+                    <polygon points="60,108 46,118 50,134 67,134 72,118"></polygon>
+                    <polygon points="54,54 38,50 32,35 44,25 58,34"></polygon>
+                </g>
+                <circle cx="100" cy="100" r="92" fill="url(#loginBallShine)"></circle>
+            </svg>
+        </div>
+
+        <div class="login-glow" aria-hidden="true"></div>
+
+        <div class="login-eyebrow">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--gold);"></div>
+            <span>Suivi de saison</span>
+        </div>
+
+        <div class="login-titleblock">
+            <h1 class="login-title">
+                FOOT<span style="color: var(--gold);">STATS</span>
+            </h1>
+            <div class="login-subtitle">Chaque match, chaque but, chaque saison — suivis comme un vrai club.</div>
+        </div>
+    </div>
+
+    <div class="login-form-side">
+        <div class="card login-card">
+            <div class="login-card-handle" aria-hidden="true"></div>
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+                <h1 style="font-size: 23px; margin: 0;">Connexion</h1>
+                <div style="font-size: 13px; color: var(--muted);">Accède aux statistiques de la famille.</div>
+            </div>
+
+            @if (WrongCredentials)
+            {
+                <div class="alert alert-danger">Nom d'utilisateur ou mot de passe incorrect.</div>
+            }
+            @if (Revoked)
+            {
+                <div class="alert alert-danger">Ce compte a été révoqué. Contactez un administrateur.</div>
+            }
+            @if (NoEmailFromProvider)
+            {
+                <div class="alert alert-danger">Votre fournisseur (Google ou Microsoft) n'a transmis aucune adresse email : impossible de créer ou reconnaître votre compte automatiquement. Contactez un administrateur.</div>
+            }
+            @if (OAuthError)
+            {
+                <div class="alert alert-danger">La connexion avec Google ou Microsoft a échoué. Réessayez, ou connectez-vous avec un nom d'utilisateur et un mot de passe.</div>
+            }
+            @if (Activated)
+            {
+                <div class="alert alert-success">Compte activé avec succès. Vous pouvez maintenant vous connecter.</div>
+            }
+            @if (PasswordReset)
+            {
+                <div class="alert alert-success">Mot de passe changé avec succès. Vous pouvez maintenant vous connecter.</div>
+            }
+
+            @if (GoogleEnabled || MicrosoftEnabled)
+            {
+                <div class="oauth-buttons">
+                    @if (GoogleEnabled)
+                    {
+                        <a class="btn-oauth" href="@($"/account/external-login/Google?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "")}")">
+                            <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.6 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.68-3.87 2.68-6.62z"></path><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"></path><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"></path><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 0 0 .96 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"></path></svg>
+                            Continuer avec Google
+                        </a>
+                    }
+                    @if (MicrosoftEnabled)
+                    {
+                        <a class="btn-oauth" href="@($"/account/external-login/Microsoft?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "")}")">
+                            <svg width="16" height="16" viewBox="0 0 16 16"><rect width="7" height="7" x="0" y="0" fill="#F25022"></rect><rect width="7" height="7" x="9" y="0" fill="#7FBA00"></rect><rect width="7" height="7" x="0" y="9" fill="#00A4EF"></rect><rect width="7" height="7" x="9" y="9" fill="#FFB900"></rect></svg>
+                            Continuer avec Microsoft
+                        </a>
+                    }
+                </div>
+                <div class="oauth-divider">ou avec un identifiant</div>
+            }
+
+            <form method="post" action="/account/login" style="display: flex; flex-direction: column; gap: 12px;">
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+                <div class="field">
+                    <label>Nom d'utilisateur</label>
+                    <input type="text" name="username" required autofocus />
+                </div>
+                <div class="field">
+                    <label>Mot de passe</label>
+                    <PasswordField Name="password" Required="true" />
+                    <a href="/mot-de-passe-oublie" style="align-self: flex-end; font-size: 12.5px; font-weight: 700; color: var(--gold-dark); margin-top: 4px;">Mot de passe oublié ?</a>
+                </div>
+                <button class="btn btn-primary btn-block" type="submit">Se connecter</button>
+            </form>
+
+            <div style="text-align: center; font-size: 13px; color: var(--muted);">
+                Pas encore de compte ? <a href="/inscription" style="color: var(--gold-dark); font-weight: 700;">Créer un compte</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    public string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? ErrorFlag { get; set; }
+
+    [SupplyParameterFromQuery(Name = "activated")]
+    public string? ActivatedFlag { get; set; }
+
+    [SupplyParameterFromQuery(Name = "reset")]
+    public string? ResetFlag { get; set; }
+
+    private bool WrongCredentials => ErrorFlag == "1";
+    private bool Revoked => ErrorFlag == "revoked";
+    private bool NoEmailFromProvider => ErrorFlag == "noemail";
+    private bool OAuthError => ErrorFlag == "oauth";
+    private bool Activated => ActivatedFlag == "1";
+    private bool PasswordReset => ResetFlag == "1";
+
+    private bool GoogleEnabled => !string.IsNullOrEmpty(Configuration["Authentication:Google:ClientId"]);
+    private bool MicrosoftEnabled => !string.IsNullOrEmpty(Configuration["Authentication:Microsoft:ClientId"]);
+}

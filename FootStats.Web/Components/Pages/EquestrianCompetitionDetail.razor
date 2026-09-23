@@ -1,0 +1,185 @@
+@page "/competitions/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject CurrentUserService CurrentUser
+
+<PageTitle>@(competition?.Name ?? "Concours") - FootStats</PageTitle>
+
+@if (competition is null)
+{
+    <div class="container"><p class="empty-note">@(notFound ? "Concours introuvable." : "Chargement...")</p></div>
+}
+else
+{
+    <div class="container">
+        <a href="/seasons/@competition.SeasonId" class="back-link">
+            <svg viewBox="0 0 24 24" class="icon" style="width:14px;height:14px;"><path d="M15 6l-6 6 6 6"></path></svg>
+            @competition.Season?.Label
+        </a>
+
+        <div>
+            <h1 class="page-title">@(string.IsNullOrWhiteSpace(competition.Name) ? "Concours" : competition.Name)</h1>
+            <div style="font-size: 15px; color: var(--muted);">@competition.City &middot; @competition.Date.ToString("dd.MM.yyyy")</div>
+        </div>
+
+        <div class="card">
+            <div class="score-table-wrap" style="padding: 8px 4px 6px;">
+                <div class="score-row head" style="grid-template-columns: 1.3fr 1fr 76px;">
+                    <span>Discipline</span><span>Classement</span><span></span>
+                </div>
+                @foreach (var e in competition.Entries)
+                {
+                    <div class="score-row" style="grid-template-columns: 1.3fr 1fr 76px;">
+                        <span class="muted row-title" data-label="Discipline">@e.Discipline</span>
+                        <span data-label="Classement" style="font-family: var(--font-display); font-size: 17px;">@e.Ranking</span>
+                        @if (canManage)
+                        {
+                            <div class="row-actions">
+                                <button class="icon-action" @onclick="() => OpenEdit(e)" aria-label="Modifier" title="Modifier">
+                                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                                </button>
+                                <button class="icon-action delete" @onclick="() => DeleteEntry(e.Id)" aria-label="Supprimer" title="Supprimer">
+                                    <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+                @if (competition.Entries.Count == 0)
+                {
+                    <p class="empty-note">Aucune épreuve enregistrée.</p>
+                }
+            </div>
+        </div>
+
+        @if (canManage)
+        {
+            <CreateFab @ref="fab" Label="Nouvelle épreuve" Floating="true">
+                <EditForm Model="form" OnValidSubmit="AddEntry">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Discipline</label>
+                        <input @bind="form.Discipline" placeholder="Dressage, saut d'obstacles..." />
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Classement</label>
+                        <input @bind="form.Ranking" placeholder="3ème/12" />
+                    </div>
+                    <button class="btn btn-primary" type="submit">Ajouter</button>
+                </EditForm>
+            </CreateFab>
+        }
+    </div>
+
+    <Modal @ref="editModal" Label="Modifier l'épreuve">
+        <EditForm Model="editForm" OnValidSubmit="SaveEdit">
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Discipline</label>
+                <input @bind="editForm.Discipline" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Classement</label>
+                <input @bind="editForm.Ranking" />
+            </div>
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </EditForm>
+    </Modal>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private EquestrianCompetition? competition;
+    private EntryForm form = new();
+    private EntryForm editForm = new();
+    private CreateFab? fab;
+    private Modal? editModal;
+    private int editingEntryId;
+    private bool canManage;
+    private bool notFound;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var seasonPlayerId = await Db.EquestrianCompetitions.Where(c => c.Id == Id).Select(c => c.Season!.PlayerId).FirstOrDefaultAsync();
+        if (seasonPlayerId == 0 || !await CurrentUser.CanSeePlayerAsync(seasonPlayerId))
+        {
+            notFound = true;
+            return;
+        }
+
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        competition = await Db.EquestrianCompetitions
+            .Include(c => c.Season)
+            .Include(c => c.Entries)
+            .FirstOrDefaultAsync(c => c.Id == Id);
+    }
+
+    private async Task AddEntry()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(form.Discipline) || string.IsNullOrWhiteSpace(form.Ranking)) return;
+
+        Db.EquestrianEntries.Add(new EquestrianEntry
+        {
+            CompetitionId = Id,
+            Discipline = form.Discipline.Trim(),
+            Ranking = form.Ranking.Trim()
+        });
+        await Db.SaveChangesAsync();
+        form = new EntryForm();
+        fab?.Close();
+        await LoadAsync();
+    }
+
+    private void OpenEdit(EquestrianEntry entry)
+    {
+        if (!canManage) return;
+        editingEntryId = entry.Id;
+        editForm = new EntryForm
+        {
+            Discipline = entry.Discipline,
+            Ranking = entry.Ranking
+        };
+        editModal?.Open();
+    }
+
+    private async Task SaveEdit()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(editForm.Discipline) || string.IsNullOrWhiteSpace(editForm.Ranking)) return;
+
+        var entry = await Db.EquestrianEntries.FindAsync(editingEntryId);
+        if (entry is null) return;
+
+        entry.Discipline = editForm.Discipline.Trim();
+        entry.Ranking = editForm.Ranking.Trim();
+
+        await Db.SaveChangesAsync();
+        editModal?.Close();
+        await LoadAsync();
+    }
+
+    private async Task DeleteEntry(int entryId)
+    {
+        if (!canManage) return;
+        var entry = await Db.EquestrianEntries.FindAsync(entryId);
+        if (entry is null) return;
+
+        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer l'épreuve {entry.Discipline} ?")) return;
+
+        Db.EquestrianEntries.Remove(entry);
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private class EntryForm
+    {
+        public string Discipline { get; set; } = "";
+        public string Ranking { get; set; } = "";
+    }
+}

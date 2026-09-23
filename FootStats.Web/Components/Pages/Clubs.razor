@@ -1,0 +1,545 @@
+@page "/clubs"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject UploadsPathProvider Uploads
+@inject IJSRuntime JS
+@inject CurrentUserService CurrentUser
+
+<PageTitle>Clubs</PageTitle>
+
+<div class="container">
+    <PageHero Eyebrow="Structures" Title="Clubs" Subtitle="Les clubs traversés au fil des saisons." />
+
+    <details class="collapsible" open>
+        <summary>
+            <span class="section-title" style="margin-bottom: 0;">
+                <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                Préféré
+                <span class="pill pill-gold" style="margin-left: 4px;">@preferredClubs.Count</span>
+            </span>
+            <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+        </summary>
+        <div class="club-grid" style="margin-top: 14px;">
+            @if (preferredClubs.Count == 0)
+            {
+                <p class="empty-note desktop-hide-note">Aucun club utilisé par tes enfants pour le moment.</p>
+            }
+            @foreach (var club in preferredClubs)
+            {
+                @ClubCard(club)
+            }
+            @if (canManage)
+            {
+                <CreateFab @ref="fab" Label="Ajouter un club" OnOpen="ResetClubSearch" Emphasized="@(preferredClubs.Count == 0)">
+                    @if (!showCreateStep)
+                    {
+                        <div class="field" style="margin-bottom: 12px;">
+                            <label>Rechercher un club</label>
+                            <input placeholder="Nom ou acronyme..." @bind="clubSearch" @bind:event="oninput" autofocus />
+                        </div>
+
+                        @if (addedMessage is not null)
+                        {
+                            <div class="club-added-banner">
+                                <svg viewBox="0 0 24 24" class="icon"><path d="M20 6L9 17l-5-5"></path></svg>
+                                <span>@addedMessage</span>
+                            </div>
+                        }
+
+                        @if (string.IsNullOrWhiteSpace(clubSearch))
+                        {
+                            <p class="empty-note">Tapez le nom d'un club pour voir s'il existe déjà, avant d'en créer un nouveau.</p>
+                        }
+                        else
+                        {
+                            var results = SearchResults;
+                            @if (results.Count > 0)
+                            {
+                                <div class="player-picker" style="margin-bottom: 14px;">
+                                    @foreach (var club in results)
+                                    {
+                                        var isPreferred = preferredClubIds.Contains(club.Id);
+                                        <div class="player-picker-row">
+                                            <span class="player-picker-avatar">@(club.Acronym ?? AutoAcronym(club.Name))</span>
+                                            <span class="player-picker-info">
+                                                <span class="player-picker-name">@club.Name</span>
+                                                <span class="player-picker-role">@(isPreferred ? "Déjà dans vos clubs" : $"Club existant · {GetPlayerCount(club.Id)} joueur(s)")</span>
+                                            </span>
+                                            @if (isPreferred)
+                                            {
+                                                <span class="pill pill-gold">✓ Ajouté</span>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn btn-outline" style="padding: 7px 14px; font-size: 12px;" @onclick="() => QuickAddFavorite(club)">+ Ajouter</button>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <p class="empty-note">Aucun club existant ne correspond à « @clubSearch ».</p>
+                            }
+
+                            <div class="club-search-divider"><span>aucun ne convient ?</span></div>
+                            <button type="button" class="club-create-cta" @onclick="OpenCreateStep">
+                                <span class="club-create-cta-icon">+</span>
+                                <span class="club-create-cta-text">
+                                    <strong>Créer « @clubSearch.Trim() »</strong>
+                                    <span>Vérifiez d'abord la liste ci-dessus</span>
+                                </span>
+                            </button>
+                        }
+                    }
+                    else
+                    {
+                        <div class="club-create-warning">
+                            ⚠ Aucun club « @newClub.Name » trouvé parmi les @clubs.Count clubs existants. Vous êtes sur le point d'en créer un nouveau, visible par toutes les familles.
+                        </div>
+                        <EditForm Model="newClub" OnValidSubmit="AddClub">
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label>Nom du club</label>
+                                <input placeholder="ex: Divonne, Pajax Foot..." @bind="newClub.Name" />
+                            </div>
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label>Acronyme</label>
+                                <input placeholder="ex: USD pour US Divonnaise" maxlength="4" @bind="newClub.Acronym" />
+                            </div>
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label>Couleur principale du maillot</label>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="color" style="width: 46px; height: 36px; padding: 2px; border-radius: 8px;" @bind="newClub.JerseyColor" />
+                                    <span class="muted" style="font-size: 13px;">@newClub.JerseyColor</span>
+                                </div>
+                            </div>
+                            <div class="field" style="margin-bottom: 16px;">
+                                <label>Logo</label>
+                                <FilePicker Accept="image/*" Title="Glissez un logo ici" Hint="PNG, JPG..." OnFileSelected="f => newLogo = f" />
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button type="button" class="btn btn-outline" @onclick="BackToSearch">← Revoir la recherche</button>
+                                <button class="btn btn-primary" type="submit">Créer et ajouter</button>
+                            </div>
+                        </EditForm>
+                    }
+                </CreateFab>
+            }
+        </div>
+    </details>
+
+</div>
+
+<Modal @ref="editModal" Label="Modifier le club">
+    @if (editingClub is not null)
+    {
+        <EditForm Model="editForm" OnValidSubmit="SaveEdit">
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Nom du club</label>
+                <input @bind="editForm.Name" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Acronyme</label>
+                <input placeholder="ex: USD pour US Divonnaise" maxlength="4" @bind="editForm.Acronym" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Couleur principale du maillot</label>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <input type="color" style="width: 46px; height: 36px; padding: 2px; border-radius: 8px;" @bind="editForm.JerseyColor" />
+                    <span class="muted" style="font-size: 13px;">@editForm.JerseyColor</span>
+                </div>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Logo</label>
+                @if (!removeLogo && !string.IsNullOrEmpty(editingClub.LogoPath))
+                {
+                    <div class="current-photo">
+                        <img class="preview-thumb" src="@editingClub.LogoPath" alt="Logo actuel" />
+                        <span>Logo actuel</span>
+                        <button type="button" class="btn-danger-outline" @onclick="() => removeLogo = true">Enlever</button>
+                    </div>
+                }
+                @if (removeLogo)
+                {
+                    <p class="empty-note" style="padding: 0 0 8px;">Le logo sera supprimé à l'enregistrement.</p>
+                }
+                <FilePicker Accept="image/*" Title="Glissez un logo ici" Hint="PNG, JPG..." OnFileSelected="OnEditLogoSelected" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Joueurs actuels (@editingClubPlayers.Count)</label>
+                <div class="player-picker">
+                    @if (editingClubPlayers.Count == 0)
+                    {
+                        <div class="player-picker-empty">Aucun joueur actuellement dans ce club.</div>
+                    }
+                    else
+                    {
+                        @foreach (var player in editingClubPlayers)
+                        {
+                            <div class="player-picker-row">
+                                <span class="player-picker-avatar">
+                                    @if (!string.IsNullOrEmpty(player.PhotoPath))
+                                    {
+                                        <img src="@player.PhotoPath" alt="" />
+                                    }
+                                    else
+                                    {
+                                        @PlayerInitials(player)
+                                    }
+                                </span>
+                                <span class="player-picker-info">
+                                    <span class="player-picker-name">@player.FirstName @player.LastName</span>
+                                    <span class="player-picker-role">@player.Position</span>
+                                </span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </EditForm>
+    }
+</Modal>
+
+@code {
+    private List<Club> clubs = [];
+    private List<Club> preferredClubs = [];
+    private Dictionary<int, int> playerCounts = [];
+    private Dictionary<int, List<Player>> playersByClub = [];
+    private ClubForm newClub = new();
+    private ClubForm editForm = new();
+    private Club? editingClub;
+    private List<Player> editingClubPlayers = [];
+    private CreateFab? fab;
+    private Modal? editModal;
+    private IBrowserFile? newLogo;
+    private IBrowserFile? editLogo;
+    private bool removeLogo;
+    private bool canManage;
+    private List<Player> visiblePlayers = [];
+    private int currentUserId;
+    private HashSet<int> assignedClubIds = [];
+    private HashSet<int> favoriteClubIds = [];
+    private HashSet<int> preferredClubIds = [];
+    private string clubSearch = "";
+    private bool showCreateStep;
+    private string? addedMessage;
+
+    private List<Club> SearchResults => string.IsNullOrWhiteSpace(clubSearch)
+        ? []
+        : clubs
+            .Where(c => c.Name.Contains(clubSearch, StringComparison.OrdinalIgnoreCase)
+                     || (c.Acronym is not null && c.Acronym.Contains(clubSearch, StringComparison.OrdinalIgnoreCase)))
+            .OrderBy(c => c.Name)
+            .Take(8)
+            .ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await CurrentUser.GetCurrentUserAsync();
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        currentUserId = user.Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        clubs = await Db.Clubs.OrderBy(c => c.Name).ToListAsync();
+
+        visiblePlayers = await (await CurrentUser.GetVisiblePlayersAsync()).ToListAsync();
+        var visiblePlayerIds = visiblePlayers.Select(p => p.Id).ToList();
+
+        playerCounts = await Db.PlayerClubs
+            .Where(m => m.EndDate == null && visiblePlayerIds.Contains(m.PlayerId))
+            .GroupBy(m => m.ClubId)
+            .Select(g => new { ClubId = g.Key, Count = g.Select(m => m.PlayerId).Distinct().Count() })
+            .ToDictionaryAsync(g => g.ClubId, g => g.Count);
+
+        var activeMemberships = await Db.PlayerClubs
+            .Include(m => m.Player)
+            .Where(m => m.EndDate == null && visiblePlayerIds.Contains(m.PlayerId))
+            .ToListAsync();
+        playersByClub = activeMemberships
+            .GroupBy(m => m.ClubId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(m => m.Player!).Where(p => p is not null).DistinctBy(p => p.Id).OrderBy(p => p.FirstName).ToList());
+
+        assignedClubIds = await Db.PlayerClubs
+            .Where(m => visiblePlayerIds.Contains(m.PlayerId))
+            .Select(m => m.ClubId)
+            .Distinct()
+            .ToHashSetAsync();
+
+        favoriteClubIds = await Db.Users
+            .Where(u => u.Id == currentUserId)
+            .SelectMany(u => u.FavoriteClubs)
+            .Select(c => c.Id)
+            .ToHashSetAsync();
+
+        preferredClubIds = assignedClubIds.Union(favoriteClubIds).ToHashSet();
+        preferredClubs = clubs.Where(c => preferredClubIds.Contains(c.Id)).ToList();
+    }
+
+    private async Task ToggleClubPreferred(Club club)
+    {
+        if (!canManage) return;
+
+        var isPreferred = preferredClubIds.Contains(club.Id);
+        if (isPreferred)
+        {
+            var visiblePlayerIds = visiblePlayers.Select(p => p.Id).ToHashSet();
+            var memberships = await Db.PlayerClubs.Where(m => m.ClubId == club.Id && visiblePlayerIds.Contains(m.PlayerId)).ToListAsync();
+
+            if (memberships.Count > 0)
+            {
+                var affectedNames = visiblePlayers
+                    .Where(p => memberships.Any(m => m.PlayerId == p.Id))
+                    .Select(p => $"{p.FirstName} {p.LastName}")
+                    .ToList();
+                var verb = affectedNames.Count > 1 ? "vont être" : "va être";
+                var question = $"Le club {club.Name} va être désassigné : {string.Join(", ", affectedNames)} {verb} sans club. Continuer ?";
+                if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+
+                Db.PlayerClubs.RemoveRange(memberships);
+            }
+            else
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"Retirer {club.Name} des clubs préférés ?")) return;
+            }
+
+            var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == currentUserId);
+            entity.FavoriteClubs.RemoveAll(c => c.Id == club.Id);
+            await Db.SaveChangesAsync();
+        }
+        else
+        {
+            if (!await JS.InvokeAsync<bool>("confirm", $"Marquer le club {club.Name} en préféré ?")) return;
+
+            var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == currentUserId);
+            var clubEntity = await Db.Clubs.FindAsync(club.Id);
+            if (clubEntity is null) return;
+            entity.FavoriteClubs.Add(clubEntity);
+            await Db.SaveChangesAsync();
+        }
+
+        await LoadAsync();
+    }
+
+    private int GetPlayerCount(int clubId) => playerCounts.GetValueOrDefault(clubId);
+
+    private List<Player> GetClubPlayers(int clubId) => playersByClub.GetValueOrDefault(clubId, []);
+
+    /// <summary>Prénoms des joueurs du club affichés sous la pile d'avatars, tronqués avec "+N" au-delà de 2
+    /// pour rester lisible sur une carte étroite (identique au seuil visuel de la pile d'avatars).</summary>
+    private static string RosterNamesLabel(List<Player> players)
+    {
+        const int maxNames = 2;
+        var names = players.Take(maxNames).Select(p => p.FirstName);
+        var label = string.Join(", ", names);
+        return players.Count > maxNames ? $"{label} +{players.Count - maxNames}" : label;
+    }
+
+    private void OnEditLogoSelected(IBrowserFile file)
+    {
+        editLogo = file;
+        removeLogo = false;
+    }
+
+    private void ResetClubSearch()
+    {
+        clubSearch = "";
+        showCreateStep = false;
+        addedMessage = null;
+        newClub = new ClubForm();
+        newLogo = null;
+    }
+
+    private void OpenCreateStep()
+    {
+        newClub = new ClubForm { Name = clubSearch.Trim() };
+        showCreateStep = true;
+    }
+
+    private void BackToSearch()
+    {
+        showCreateStep = false;
+    }
+
+    private async Task QuickAddFavorite(Club club)
+    {
+        if (!canManage || preferredClubIds.Contains(club.Id)) return;
+
+        var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == currentUserId);
+        var clubEntity = await Db.Clubs.FindAsync(club.Id);
+        if (clubEntity is null) return;
+        entity.FavoriteClubs.Add(clubEntity);
+        await Db.SaveChangesAsync();
+        addedMessage = $"« {club.Name} » ajouté à vos clubs préférés";
+        await LoadAsync();
+    }
+
+    private async Task AddClub()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(newClub.Name)) return;
+
+        string? logoPath = newLogo is not null
+            ? await FileStorage.SavePhotoAsync(newLogo, Uploads.Root, "clubs")
+            : null;
+
+        Db.Clubs.Add(new Club
+        {
+            Name = newClub.Name.Trim(),
+            LogoPath = logoPath,
+            JerseyColor = newClub.JerseyColor,
+            Acronym = string.IsNullOrWhiteSpace(newClub.Acronym) ? null : newClub.Acronym.Trim().ToUpper()
+        });
+        await Db.SaveChangesAsync();
+        var clubEntity = await Db.Clubs
+            .Where(c => c.Name == newClub.Name.Trim())
+            .OrderByDescending(c => c.Id)
+            .FirstAsync();
+        var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == currentUserId);
+        entity.FavoriteClubs.Add(clubEntity);
+        await Db.SaveChangesAsync();
+        ResetClubSearch();
+        fab?.Close();
+        await LoadAsync();
+    }
+
+    private async Task OpenEdit(Club club)
+    {
+        if (!canManage) return;
+        editingClub = club;
+        editForm = new ClubForm { Name = club.Name, JerseyColor = club.JerseyColor, Acronym = club.Acronym ?? "" };
+        editLogo = null;
+        removeLogo = false;
+        editingClubPlayers = await Db.PlayerClubs
+            .Where(m => m.ClubId == club.Id && m.EndDate == null)
+            .Select(m => m.Player!)
+            .OrderBy(p => p.FirstName).ThenBy(p => p.LastName)
+            .ToListAsync();
+        editModal?.Open();
+    }
+
+    private async Task SaveEdit()
+    {
+        if (editingClub is null || string.IsNullOrWhiteSpace(editForm.Name)) return;
+
+        var club = await Db.Clubs.FindAsync(editingClub.Id);
+        if (club is null) return;
+
+        club.Name = editForm.Name.Trim();
+        club.JerseyColor = editForm.JerseyColor;
+        club.Acronym = string.IsNullOrWhiteSpace(editForm.Acronym) ? null : editForm.Acronym.Trim().ToUpper();
+        if (editLogo is not null)
+        {
+            club.LogoPath = await FileStorage.SavePhotoAsync(editLogo, Uploads.Root, "clubs");
+        }
+        else if (removeLogo)
+        {
+            club.LogoPath = null;
+        }
+
+        await Db.SaveChangesAsync();
+        editModal?.Close();
+        editingClub = null;
+        await LoadAsync();
+    }
+
+    private RenderFragment ClubCard(Club club) => @<div class="club-card @(preferredClubIds.Contains(club.Id) ? "featured" : "")" @onclick="() => OpenEdit(club)" style="@(canManage ? "" : "cursor: default;")">
+        @if (canManage)
+        {
+            <button class="icon-action corner-bottom-left @(preferredClubIds.Contains(club.Id) ? "favorited" : "")" @onclick:stopPropagation="true" @onclick="() => ToggleClubPreferred(club)" aria-label="@(preferredClubIds.Contains(club.Id) ? "Retirer des préférés" : "Marquer comme préféré")" title="@(preferredClubIds.Contains(club.Id) ? "Retirer des préférés" : "Marquer comme préféré")">
+                @if (preferredClubIds.Contains(club.Id))
+                {
+                    <svg viewBox="0 0 24 24" class="icon" fill="currentColor" stroke="none"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                }
+                else
+                {
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                }
+            </button>
+        }
+        <div class="card-crest">
+            @if (preferredClubIds.Contains(club.Id))
+            {
+                <svg viewBox="0 0 24 24" class="mini-ball" fill="#fff"><circle cx="12" cy="12" r="10.5"></circle><path d="M12 6l3.6 2.6-1.4 4.2h-4.4l-1.4-4.2z" fill="#12201a"></path></svg>
+            }
+            <div class="card-badge">
+                @if (!string.IsNullOrEmpty(club.LogoPath))
+                {
+                    <img src="@club.LogoPath" alt="@club.Name" />
+                }
+                else
+                {
+                    @(club.Acronym ?? AutoAcronym(club.Name))
+                }
+            </div>
+            <span class="club-acronym-caption">@(string.IsNullOrWhiteSpace(club.Acronym) ? "AUCUN" : club.Acronym.ToUpper())</span>
+        </div>
+        <div class="card-body">
+            <div class="card-title-row">
+                <div class="card-title">@club.Name</div>
+            </div>
+            <div class="card-line">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                <span>@GetPlayerCount(club.Id) joueur@(GetPlayerCount(club.Id) > 1 ? "s" : "")</span>
+            </div>
+            @{ var rosterPlayers = GetClubPlayers(club.Id); }
+            @if (rosterPlayers.Count > 0)
+            {
+                <div class="club-roster">
+                    <div class="roster-stack">
+                        @foreach (var rosterPlayer in rosterPlayers.Take(3))
+                        {
+                            <div class="roster-avatar" title="@rosterPlayer.FirstName @rosterPlayer.LastName">
+                                @if (!string.IsNullOrEmpty(rosterPlayer.PhotoPath))
+                                {
+                                    <img src="@rosterPlayer.PhotoPath" alt="" />
+                                }
+                                else
+                                {
+                                    @PlayerInitials(rosterPlayer)
+                                }
+                            </div>
+                        }
+                        @if (rosterPlayers.Count > 3)
+                        {
+                            <div class="roster-avatar overflow">+@(rosterPlayers.Count - 3)</div>
+                        }
+                    </div>
+                    <span class="roster-names">@RosterNamesLabel(rosterPlayers)</span>
+                </div>
+            }
+            @if (canManage)
+            {
+                <div class="club-favorite-spacer"></div>
+            }
+        </div>
+    </div>;
+
+    private static string PlayerInitials(Player p)
+    {
+        var a = p.FirstName.Length > 0 ? p.FirstName[0].ToString() : "";
+        var b = p.LastName.Length > 0 ? p.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    /// <summary>Acronyme calculé quand le club n'en a pas de manuel : initiale de chaque mot, 3 lettres max.</summary>
+    private static string AutoAcronym(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? string.Concat(parts.Select(p => p[0])).ToUpper()[..Math.Min(3, parts.Length)]
+            : name[..Math.Min(2, name.Length)].ToUpper();
+    }
+
+    private class ClubForm
+    {
+        public string Name { get; set; } = "";
+        public string JerseyColor { get; set; } = "#1D4ED8";
+        public string Acronym { get; set; } = "";
+    }
+}

@@ -1,0 +1,157 @@
+@page "/invitation/{Token}"
+@attribute [AllowAnonymous]
+@layout Layout.EmptyLayout
+@rendermode InteractiveServer
+@inject InvitationService InvitationSvc
+@inject NavigationManager Nav
+
+<PageTitle>Activer mon compte - FootStats</PageTitle>
+
+<div class="login-shell">
+    <div class="login-pitch">
+        <div class="login-glow" aria-hidden="true"></div>
+        <div class="login-eyebrow">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--gold);"></div>
+            <span>@Eyebrow</span>
+        </div>
+        <div class="login-titleblock">
+            <h1 class="login-title">
+                FOOT<span style="color: var(--gold);">STATS</span>
+            </h1>
+            <div class="login-subtitle">@Subtitle</div>
+        </div>
+    </div>
+
+    <div class="login-form-side">
+        <div class="card login-card">
+            <div class="login-card-handle" aria-hidden="true"></div>
+
+            @if (invalidReason is not null)
+            {
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <h1 style="font-size: 26px;">@(isPasswordReset ? "Lien invalide" : "Invitation invalide")</h1>
+                    <div class="alert alert-danger">@invalidReason</div>
+                    <p class="empty-note">
+                        @(isPasswordReset
+                            ? "Redemandez un lien de réinitialisation."
+                            : "Contactez votre administrateur pour recevoir une nouvelle invitation.")
+                    </p>
+                    @if (isPasswordReset)
+                    {
+                        <a class="btn btn-primary btn-block" href="/mot-de-passe-oublie" style="margin-top: 8px;">Redemander un lien</a>
+                    }
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <h1 style="font-size: 26px;">@FormTitle</h1>
+                    <div style="font-size: 14px; color: var(--muted);">@FormSubtitle</div>
+                </div>
+
+                @if (formError is not null)
+                {
+                    <div class="alert alert-danger">@formError</div>
+                }
+
+                <EditForm Model="this" OnValidSubmit="Submit">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Mot de passe</label>
+                        <PasswordField @bind-Value="password" Required="true" />
+                    </div>
+                    <div class="field" style="margin-bottom: 20px;">
+                        <label>Confirmer le mot de passe</label>
+                        <PasswordField @bind-Value="passwordConfirm" Required="true" />
+                    </div>
+                    <button class="btn btn-primary btn-block" type="submit" disabled="@submitting">
+                        @FormTitle
+                    </button>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = "";
+
+    private string password = "";
+    private string passwordConfirm = "";
+    private string? formError;
+    private string? invalidReason;
+    private bool submitting;
+    private bool isReactivation;
+    private bool isPasswordReset;
+
+    private string Eyebrow => isPasswordReset ? "Mot de passe oublié" : (isReactivation ? "Changement de mot de passe" : "Activation de compte");
+
+    private string Subtitle => isPasswordReset
+        ? "Choisissez un nouveau mot de passe pour votre compte."
+        : (isReactivation
+            ? "Vous pouvez choisir un nouveau mot de passe, ou fermer cette page pour conserver l'actuel."
+            : "Choisissez votre mot de passe pour activer votre compte.");
+
+    private string FormTitle => isPasswordReset ? "Réinitialiser mon mot de passe" : (isReactivation ? "Changer mon mot de passe" : "Activer mon compte");
+
+    private string FormSubtitle => isPasswordReset
+        ? "Choisissez le nouveau mot de passe de votre compte FootStats."
+        : (isReactivation
+            ? "Votre compte est déjà actif. Définissez un nouveau mot de passe si vous le souhaitez, sinon fermez simplement cette page."
+            : "Choisissez votre mot de passe pour accéder à FootStats.");
+
+    protected override async Task OnInitializedAsync()
+    {
+        var validation = await InvitationSvc.ValidateTokenAsync(Token);
+        isPasswordReset = validation.Purpose == InvitationPurpose.PasswordReset;
+        if (!validation.Success)
+        {
+            invalidReason = validation.Error switch
+            {
+                InvitationAcceptError.Expired => isPasswordReset ? "Ce lien de réinitialisation a expiré." : "Cette invitation a expiré.",
+                InvitationAcceptError.AlreadyUsed => isPasswordReset ? "Ce lien de réinitialisation a déjà été utilisé." : "Cette invitation a déjà été utilisée.",
+                InvitationAcceptError.Revoked => isPasswordReset ? "Ce lien de réinitialisation n'est plus valable." : "Cette invitation a été révoquée.",
+                _ => isPasswordReset ? "Ce lien de réinitialisation est invalide." : "Ce lien d'invitation est invalide."
+            };
+        }
+        else
+        {
+            isReactivation = validation.TargetAlreadyActive;
+        }
+    }
+
+    private async Task Submit()
+    {
+        formError = null;
+
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 6)
+        {
+            formError = "Le mot de passe doit contenir au moins 6 caractères.";
+            return;
+        }
+        if (password != passwordConfirm)
+        {
+            formError = "Les mots de passe ne correspondent pas.";
+            return;
+        }
+
+        submitting = true;
+        var result = await InvitationSvc.AcceptAsync(Token, password);
+        submitting = false;
+
+        if (!result.Success)
+        {
+            isPasswordReset = result.Purpose == InvitationPurpose.PasswordReset;
+            invalidReason = result.Error switch
+            {
+                InvitationAcceptError.Expired => isPasswordReset ? "Ce lien de réinitialisation a expiré." : "Cette invitation a expiré.",
+                InvitationAcceptError.AlreadyUsed => isPasswordReset ? "Ce lien de réinitialisation a déjà été utilisé." : "Cette invitation a déjà été utilisée.",
+                InvitationAcceptError.Revoked => isPasswordReset ? "Ce lien de réinitialisation n'est plus valable." : "Cette invitation a été révoquée.",
+                _ => isPasswordReset ? "Ce lien de réinitialisation est invalide." : "Ce lien d'invitation est invalide."
+            };
+            return;
+        }
+
+        Nav.NavigateTo(isPasswordReset ? "/login?reset=1" : "/login?activated=1", forceLoad: true);
+    }
+}

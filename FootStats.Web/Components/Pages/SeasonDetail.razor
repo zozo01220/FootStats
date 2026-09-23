@@ -1,0 +1,690 @@
+@page "/seasons/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject StatsService Stats
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject CurrentUserService CurrentUser
+
+<PageTitle>@season?.Label - FootStats</PageTitle>
+
+@if (season is null)
+{
+    <div class="container"><p class="empty-note">@(notFound ? "Saison introuvable." : "Chargement...")</p></div>
+}
+else
+{
+    <div class="container">
+        <a href="/" class="back-link">
+            <svg viewBox="0 0 24 24" class="icon" style="width:14px;height:14px;"><path d="M15 6l-6 6 6 6"></path></svg>
+            Toutes les saisons
+        </a>
+
+        @{ var currentClub = clubTimeline.Count > 0 ? clubTimeline[^1] : null; }
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 18px; flex-wrap: wrap; min-width: 0;">
+                <div class="player-avatar-lg-placeholder">@(currentClub?.Acronym ?? Initials(currentClub?.Name))</div>
+                <div>
+                    <h1 class="page-title">@season.Label</h1>
+                    <div class="season-player-line" style="margin-top: 6px;">
+                        <PlayerBadge Player="season.Player" Club="currentClub" />
+                    </div>
+                    <div class="meta" style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                        <span class="pill">@(currentClub?.Name ?? "Club inconnu")</span>
+                        <span class="pill pill-gold">@season.Category</span>
+                        <span class="pill">@SportDisplay.Label(season.Sport)</span>
+                    </div>
+                </div>
+            </div>
+            @if (canManage)
+            {
+                <button class="icon-action" style="flex-shrink: 0;" @onclick="OpenEditSeason" aria-label="Modifier la saison" title="Modifier la saison">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                </button>
+            }
+        </div>
+
+        @if (canManage && SeasonRenewalHelper.NeedsRenewal(season, DateOnly.FromDateTime(DateTime.Today)))
+        {
+            <div class="renewal-banner">
+                <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path><path d="M12 14v4M10 16h4"></path></svg>
+                <div class="renewal-body">
+                    <div class="renewal-title">Saison bientôt terminée</div>
+                    <div class="renewal-desc">@(season.EndDate is { } endDate ? $"Se termine le {endDate:dd.MM.yyyy}. " : "")Prêt·e pour la saison suivante avec @(season.Player?.FirstName) ?</div>
+                </div>
+                <button class="btn btn-primary" @onclick="OpenRenewSeason">Renouveler</button>
+            </div>
+        }
+
+        @if (clubTimeline.Count > 1)
+        {
+            <div class="club-timeline-banner">
+                <span class="club-timeline-banner-label">Clubs de la saison</span>
+                @for (var i = 0; i < clubTimeline.Count; i++)
+                {
+                    var club = clubTimeline[i];
+                    var isLast = i == clubTimeline.Count - 1;
+                    <span class="club-timeline-chip @(isLast ? "current" : "past")">@club.Name</span>
+                    @if (!isLast)
+                    {
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+                    }
+                }
+            </div>
+        }
+
+        @if (season.Sport == Sport.Equitation)
+        {
+            <div class="stat-grid">
+                <div class="stat-tile">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 21c4-3 7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 3 8 7 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>
+                    <div class="num">@competitions.Count</div>
+                    <div class="label">Concours</div>
+                </div>
+                <div class="stat-tile">
+                    <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                    <div class="num" style="color: var(--gold-dark);">@competitions.Sum(c => c.Entries.Count)</div>
+                    <div class="label">Épreuves</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="section-title" style="padding: 22px 24px 4px;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--pitch);"><path d="M12 21c4-3 7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 3 8 7 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>
+                    Concours
+                </div>
+                <div class="score-table-wrap" style="padding: 8px 4px 6px;">
+                    <div class="score-row head" style="grid-template-columns: 1.3fr 0.9fr 0.8fr 0.9fr 0.7fr 76px;">
+                        <span>Nom</span><span>Ville</span><span>Date</span><span>Club</span><span>Épreuves</span><span></span>
+                    </div>
+                    @foreach (var c in competitions)
+                    {
+                        <div class="score-row row-clickable" style="grid-template-columns: 1.3fr 0.9fr 0.8fr 0.9fr 0.7fr 76px;" @onclick="() => GoToCompetition(c.Id)">
+                            <span class="row-title">@(string.IsNullOrWhiteSpace(c.Name) ? "Concours" : c.Name)</span>
+                            <span class="muted" data-label="Ville">@c.City</span>
+                            <span class="muted" data-label="Date">@c.Date.ToString("dd.MM.yy")</span>
+                            <span data-label="Club" style="display: flex; align-items: center; gap: 6px;">
+                                @{ var competitionClub = EventClub(c.Date); }
+                                @if (!string.IsNullOrEmpty(competitionClub?.LogoPath))
+                                {
+                                    <img src="@competitionClub.LogoPath" alt="" class="club-logo-mini" />
+                                }
+                                <span>@(competitionClub?.Name ?? "Club inconnu")</span>
+                            </span>
+                            <span data-label="Épreuves">@c.Entries.Count</span>
+                            @if (canManage)
+                            {
+                                <div class="row-actions">
+                                    <button class="icon-action" @onclick:stopPropagation="true" @onclick="() => OpenEditCompetition(c)" aria-label="Modifier" title="Modifier">
+                                        <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                                    </button>
+                                    <button class="icon-action delete" @onclick:stopPropagation="true" @onclick="() => DeleteCompetition(c.Id)" aria-label="Supprimer" title="Supprimer">
+                                        <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (competitions.Count == 0)
+                    {
+                        <p class="empty-note">Aucun concours pour le moment.</p>
+                    }
+                </div>
+            </div>
+
+            <Modal @ref="competitionCreateModal" Label="Nouveau concours">
+                <EditForm Model="competitionForm" OnValidSubmit="AddCompetition">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Nom (optionnel)</label>
+                        <input @bind="competitionForm.Name" />
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Ville</label>
+                        <input @bind="competitionForm.City" />
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Date</label>
+                        <input type="date" @bind="competitionForm.Date" />
+                    </div>
+                    <button class="btn btn-primary" type="submit">Ajouter</button>
+                </EditForm>
+            </Modal>
+
+            <Modal @ref="competitionEditModal" Label="Modifier le concours">
+                <EditForm Model="competitionEditForm" OnValidSubmit="SaveEditCompetition">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Nom (optionnel)</label>
+                        <input @bind="competitionEditForm.Name" />
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Ville</label>
+                        <input @bind="competitionEditForm.City" />
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Date</label>
+                        <input type="date" @bind="competitionEditForm.Date" />
+                    </div>
+                    <button class="btn btn-primary" type="submit">Enregistrer</button>
+                </EditForm>
+            </Modal>
+        }
+        else if (stats is not null)
+        {
+            <div class="stat-grid @(attendance is not null ? "cols-5" : "")">
+                <div class="stat-tile">
+                    <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                    <div class="num">@stats.MatchCount</div>
+                    <div class="label">Matchs joués</div>
+                </div>
+                <div class="stat-tile">
+                    <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="9.5"></circle><path d="M12 6.5l3.5 2.5-1.3 4h-4.4l-1.3-4z"></path></svg>
+                    <div class="num" style="color: var(--gold-dark);">@stats.PlayerGoals</div>
+                    <div class="label">@scoreWord marqués</div>
+                </div>
+                <div class="stat-tile">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg>
+                    <div class="num">@stats.GoalsPerMatch</div>
+                    <div class="label">@scoreWord / match</div>
+                </div>
+                <div class="stat-tile">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M3 17l6-6 4 4 8-8"></path><path d="M15 7h6v6"></path></svg>
+                    <div class="num" style="color: var(--gold-dark);">@stats.PlayerAssists</div>
+                    <div class="label">Passes décisives</div>
+                </div>
+                @if (attendance is not null)
+                {
+                    <div class="stat-tile">
+                        <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path><path d="m8.5 15 2 2 4.5-4.5"></path></svg>
+                        <div class="num" style="@(attendance.Percentage is null ? "color: var(--muted);" : "")">@(attendance.Percentage is { } pct ? $"{pct:0}%" : "—")</div>
+                        <div class="label">Présence entraînements</div>
+                    </div>
+                }
+            </div>
+
+            <AgendaView @ref="agendaView" SeasonId="Id" CanManage="canManage" OnAttendanceChanged="ReloadAttendance" />
+
+            <Modal @ref="tournamentCreateModal" Label="Nouvel événement">
+                <Subtitle>
+                    <PlayerBadge Player="season.Player" Club="currentClub" />
+                </Subtitle>
+                <ChildContent>
+                    <EditForm Model="form" OnValidSubmit="AddTournament">
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Type</label>
+                            <select @bind="form.EventType">
+                                <option value="@EventType.Tournoi">Tournoi</option>
+                                <option value="@EventType.Plateau">Plateau</option>
+                            </select>
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Nom (optionnel)</label>
+                            <input @bind="form.Name" placeholder="Pas de nom pour un plateau" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Ville</label>
+                            <input @bind="form.City" />
+                        </div>
+                        <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+                            <div class="field" style="margin-bottom: 0;"><label>Date</label><input type="date" @bind="form.Date" /></div>
+                            <div class="field" style="margin-bottom: 0;"><label>Coup d'envoi (optionnel)</label><input type="time" @bind="form.KickoffTime" /></div>
+                        </div>
+                        <button class="btn btn-primary" type="submit">Ajouter</button>
+                    </EditForm>
+                </ChildContent>
+            </Modal>
+        }
+
+        <Modal @ref="trainingCreateModal" Label="Nouvel entraînement">
+            <ChildContent>
+                <EditForm Model="trainingForm" OnValidSubmit="AddTraining">
+                    <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 16px;">
+                        <div class="field" style="margin-bottom: 0;"><label>Date</label><input type="date" @bind="trainingForm.Date" /></div>
+                        <div class="field" style="margin-bottom: 0;"><label>Heure de début</label><input type="time" @bind="trainingForm.StartTime" /></div>
+                        <div class="field" style="margin-bottom: 0;"><label>Heure de fin</label><input type="time" @bind="trainingForm.EndTime" /></div>
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Lieu</label>
+                        <input @bind="trainingForm.Location" placeholder="Stade Municipal" />
+                    </div>
+                    @if (trainingFormError is not null)
+                    {
+                        <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@trainingFormError</p>
+                    }
+                    <button class="btn btn-primary" type="submit">Ajouter</button>
+                </EditForm>
+            </ChildContent>
+        </Modal>
+
+        @if (canManage)
+        {
+            <div class="event-fab-wrap">
+                @if (showEventMenu)
+                {
+                    <div class="event-fab-menu">
+                        @if (season.Sport == Sport.Equitation)
+                        {
+                            <button type="button" class="event-fab-menu-item" @onclick="OpenCreateCompetition">
+                                <span class="event-fab-menu-icon type-tournoi">
+                                    <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><path d="M12 21c4-3 7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 3 8 7 11z"></path><circle cx="12" cy="10" r="2.4"></circle></svg>
+                                </span>
+                                Concours
+                            </button>
+                        }
+                        else
+                        {
+                            <button type="button" class="event-fab-menu-item" @onclick="() => OpenCreateTournament(EventType.Tournoi)">
+                                <span class="event-fab-menu-icon type-tournoi">
+                                    <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                                </span>
+                                Tournoi
+                            </button>
+                            <button type="button" class="event-fab-menu-item" @onclick="() => OpenCreateTournament(EventType.Plateau)">
+                                <span class="event-fab-menu-icon type-plateau">
+                                    <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                                </span>
+                                Plateau
+                            </button>
+                        }
+                        <button type="button" class="event-fab-menu-item" @onclick="OpenCreateTraining">
+                            <span class="event-fab-menu-icon type-training">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                            </span>
+                            Entraînement
+                        </button>
+                    </div>
+                }
+                <button type="button" class="event-fab" @onclick="ToggleEventMenu" aria-label="Ajouter">
+                    <svg viewBox="0 0 24 24" class="icon" style="@(showEventMenu ? "transform: rotate(45deg);" : "")"><path d="M12 5v14M5 12h14"></path></svg>
+                </button>
+            </div>
+        }
+
+        <Modal @ref="seasonEditModal" Label="Modifier la saison">
+            <EditForm Model="seasonEditForm" OnValidSubmit="SaveEditSeason">
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Catégorie</label>
+                    <select @bind="seasonEditForm.Category">
+                        @foreach (var category in SeasonCategoryOptions.ForSelect(seasonEditForm.Category))
+                        {
+                            <option value="@category">@category</option>
+                        }
+                    </select>
+                </div>
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Club</label>
+                    <select @bind="seasonEditForm.ClubId">
+                        @foreach (var club in editClubs)
+                        {
+                            <option value="@club.Id">@club.Name</option>
+                        }
+                    </select>
+                </div>
+                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <div class="field" style="flex: 1; margin-bottom: 0;">
+                        <label>Début de saison</label>
+                        <input type="text" placeholder="2026-09" @bind="seasonEditForm.StartMonth" @bind:event="oninput" />
+                    </div>
+                    <div class="field" style="flex: 1; margin-bottom: 0;">
+                        <label>Fin de saison</label>
+                        <input type="text" placeholder="2027-07" @bind="seasonEditForm.EndMonth" @bind:event="oninput" />
+                    </div>
+                </div>
+                @{ var editPreviewLabel = SeasonLabelHelper.ComputeLabel(seasonEditForm.StartMonth, seasonEditForm.EndMonth); }
+                @if (editPreviewLabel is not null)
+                {
+                    <p class="empty-note" style="padding: 0 0 8px;">Saison calculée : <strong>@editPreviewLabel</strong></p>
+                }
+                @if (seasonEditError is not null)
+                {
+                    <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@seasonEditError</p>
+                }
+                <button class="btn btn-primary" type="submit">Enregistrer</button>
+            </EditForm>
+        </Modal>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Season? season;
+    private string scoreWord = "Buts";
+    private bool canManage;
+    private bool notFound;
+    private List<PlayerClub> memberships = [];
+    private List<Club> clubTimeline = [];
+
+    private List<Club> editClubs = [];
+    private SeasonEditForm seasonEditForm = new();
+    private string? seasonEditError;
+    private Modal? seasonEditModal;
+
+    // Bouton "+" unique proposant Tournoi/Plateau/Concours/Entraînement selon le sport
+    // (évite d'avoir plusieurs boutons flottants superposés).
+    private bool showEventMenu;
+
+    // Football / Basketball
+    private SeasonStats? stats;
+    private SeasonAttendanceStats? attendance;
+    private TournamentForm form = new();
+    private Modal? tournamentCreateModal;
+
+    // Équitation
+    private List<EquestrianCompetition> competitions = [];
+    private CompetitionForm competitionForm = new();
+    private CompetitionForm competitionEditForm = new();
+    private Modal? competitionCreateModal;
+    private Modal? competitionEditModal;
+    private int editingCompetitionId;
+
+    // Entraînement (tous sports)
+    private AgendaView? agendaView;
+    private TrainingForm trainingForm = new();
+    private Modal? trainingCreateModal;
+    private string? trainingFormError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var seasonPlayerId = await Db.Seasons.Where(s => s.Id == Id).Select(s => s.PlayerId).FirstOrDefaultAsync();
+        if (seasonPlayerId == 0 || !await CurrentUser.CanSeePlayerAsync(seasonPlayerId))
+        {
+            notFound = true;
+            return;
+        }
+
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        season = await Db.Seasons.Include(s => s.Club).Include(s => s.Player).FirstOrDefaultAsync(s => s.Id == Id);
+        if (season is null) return;
+
+        scoreWord = SportDisplay.ScoreWord(season.Sport);
+
+        memberships = await Db.PlayerClubs.Include(m => m.Club)
+            .Where(m => m.PlayerId == season.PlayerId)
+            .OrderBy(m => m.StartDate)
+            .ToListAsync();
+        clubTimeline = ClubTimelineHelper.SeasonTimeline(memberships, season.StartDate, season.EndDate, season.Club);
+        editClubs = await Db.Clubs.OrderBy(c => c.Name).ToListAsync();
+
+        if (season.Sport == Sport.Equitation)
+        {
+            competitions = await Db.EquestrianCompetitions
+                .Include(c => c.Entries)
+                .Where(c => c.SeasonId == Id)
+                .OrderByDescending(c => c.Date)
+                .ToListAsync();
+        }
+
+        if (season.Sport != Sport.Equitation)
+        {
+            stats = await Stats.GetSeasonStatsAsync(Id);
+            attendance = await Stats.GetSeasonAttendanceAsync(Id);
+        }
+    }
+
+    private void OpenRenewSeason()
+    {
+        if (!canManage || season is null) return;
+
+        var (startMonth, endMonth, category) = SeasonRenewalHelper.SuggestRenewal(season);
+        seasonEditError = null;
+        seasonEditForm = new SeasonEditForm
+        {
+            Category = category,
+            ClubId = season.ClubId,
+            StartMonth = startMonth,
+            EndMonth = endMonth
+        };
+        seasonEditModal?.Open();
+    }
+
+    private void OpenEditSeason()
+    {
+        if (!canManage || season is null) return;
+
+        seasonEditError = null;
+        seasonEditForm = new SeasonEditForm
+        {
+            Category = season.Category,
+            ClubId = season.ClubId,
+            StartMonth = season.StartDate is { } start ? $"{start.Year:0000}-{start.Month:00}" : "",
+            EndMonth = season.EndDate is { } end ? $"{end.Year:0000}-{end.Month:00}" : ""
+        };
+        seasonEditModal?.Open();
+    }
+
+    private async Task SaveEditSeason()
+    {
+        if (!canManage || season is null) return;
+        seasonEditError = null;
+
+        if (string.IsNullOrWhiteSpace(seasonEditForm.Category) || seasonEditForm.ClubId == 0)
+        {
+            seasonEditError = "Catégorie et club sont obligatoires.";
+            return;
+        }
+
+        if (!SeasonLabelHelper.TryParseMonth(seasonEditForm.StartMonth, out var startParsed))
+        {
+            seasonEditError = "Indique un mois de début de saison.";
+            return;
+        }
+
+        var duplicate = await Db.Seasons.AnyAsync(s => s.Id != Id && s.PlayerId == season.PlayerId && s.ClubId == seasonEditForm.ClubId);
+        if (duplicate)
+        {
+            seasonEditError = "Ce joueur a déjà une saison enregistrée dans ce club.";
+            return;
+        }
+
+        var startDate = new DateOnly(startParsed.Year, startParsed.Month, 1);
+        DateOnly? endDate = null;
+        if (SeasonLabelHelper.TryParseMonth(seasonEditForm.EndMonth, out var endParsed))
+        {
+            endDate = new DateOnly(endParsed.Year, endParsed.Month, DateTime.DaysInMonth(endParsed.Year, endParsed.Month));
+        }
+
+        var entity = await Db.Seasons.FindAsync(Id);
+        if (entity is null) return;
+
+        entity.Category = seasonEditForm.Category.Trim();
+        entity.ClubId = seasonEditForm.ClubId;
+        entity.StartDate = startDate;
+        entity.EndDate = endDate;
+        entity.Label = SeasonLabelHelper.ComputeLabel(seasonEditForm.StartMonth, seasonEditForm.EndMonth) ?? startDate.Year.ToString();
+
+        await Db.SaveChangesAsync();
+        seasonEditModal?.Close();
+        await LoadAsync();
+    }
+
+    private async Task AddTournament()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(form.City)) return;
+
+        Db.Tournaments.Add(new Tournament
+        {
+            Name = string.IsNullOrWhiteSpace(form.Name) ? null : form.Name.Trim(),
+            EventType = form.EventType,
+            City = form.City.Trim(),
+            Date = DateOnly.FromDateTime(form.Date),
+            KickoffTime = form.KickoffTime,
+            SeasonId = Id
+        });
+        await Db.SaveChangesAsync();
+        form = new TournamentForm();
+        tournamentCreateModal?.Close();
+        await LoadAsync();
+        await (agendaView?.ReloadAsync() ?? Task.CompletedTask);
+    }
+
+    private void OpenCreateTraining()
+    {
+        showEventMenu = false;
+        trainingFormError = null;
+        trainingForm = new TrainingForm();
+        trainingCreateModal?.Open();
+    }
+
+    private async Task AddTraining()
+    {
+        if (!canManage) return;
+        trainingFormError = null;
+
+        if (string.IsNullOrWhiteSpace(trainingForm.Location))
+        {
+            trainingFormError = "Indique un lieu.";
+            return;
+        }
+        if (trainingForm.EndTime <= trainingForm.StartTime)
+        {
+            trainingFormError = "L'heure de fin doit être après l'heure de début.";
+            return;
+        }
+
+        Db.Trainings.Add(new Training
+        {
+            SeasonId = Id,
+            Days = TrainingOccurrenceHelper.ToMask(trainingForm.Date.DayOfWeek),
+            StartTime = trainingForm.StartTime,
+            EndTime = trainingForm.EndTime,
+            Location = trainingForm.Location.Trim(),
+            StartDate = trainingForm.Date,
+            EndDate = trainingForm.Date
+        });
+        await Db.SaveChangesAsync();
+        trainingCreateModal?.Close();
+        await (agendaView?.ReloadAsync() ?? Task.CompletedTask);
+    }
+
+    private async Task AddCompetition()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(competitionForm.City)) return;
+
+        Db.EquestrianCompetitions.Add(new EquestrianCompetition
+        {
+            Name = string.IsNullOrWhiteSpace(competitionForm.Name) ? null : competitionForm.Name.Trim(),
+            City = competitionForm.City.Trim(),
+            Date = DateOnly.FromDateTime(competitionForm.Date),
+            SeasonId = Id
+        });
+        await Db.SaveChangesAsync();
+        competitionForm = new CompetitionForm();
+        competitionCreateModal?.Close();
+        await LoadAsync();
+    }
+
+    private void OpenEditCompetition(EquestrianCompetition c)
+    {
+        if (!canManage) return;
+        editingCompetitionId = c.Id;
+        competitionEditForm = new CompetitionForm
+        {
+            Name = c.Name ?? "",
+            City = c.City,
+            Date = c.Date.ToDateTime(TimeOnly.MinValue)
+        };
+        competitionEditModal?.Open();
+    }
+
+    private async Task SaveEditCompetition()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(competitionEditForm.City)) return;
+
+        var competition = await Db.EquestrianCompetitions.FindAsync(editingCompetitionId);
+        if (competition is null) return;
+
+        competition.Name = string.IsNullOrWhiteSpace(competitionEditForm.Name) ? null : competitionEditForm.Name.Trim();
+        competition.City = competitionEditForm.City.Trim();
+        competition.Date = DateOnly.FromDateTime(competitionEditForm.Date);
+
+        await Db.SaveChangesAsync();
+        competitionEditModal?.Close();
+        await LoadAsync();
+    }
+
+    private async Task DeleteCompetition(int competitionId)
+    {
+        if (!canManage) return;
+        var competition = await Db.EquestrianCompetitions.FindAsync(competitionId);
+        if (competition is null) return;
+
+        var label = string.IsNullOrWhiteSpace(competition.Name) ? "ce concours" : competition.Name;
+        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {label} ?")) return;
+
+        Db.EquestrianCompetitions.Remove(competition);
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private void GoToCompetition(int id) => Navigation.NavigateTo($"/competitions/{id}");
+
+    private void ToggleEventMenu() => showEventMenu = !showEventMenu;
+
+    private void OpenCreateTournament(EventType eventType)
+    {
+        showEventMenu = false;
+        form = new TournamentForm { EventType = eventType };
+        tournamentCreateModal?.Open();
+    }
+
+    private void OpenCreateCompetition()
+    {
+        showEventMenu = false;
+        competitionForm = new CompetitionForm();
+        competitionCreateModal?.Open();
+    }
+
+    private async Task ReloadAttendance()
+    {
+        attendance = await Stats.GetSeasonAttendanceAsync(Id);
+    }
+
+    private Club? EventClub(DateOnly date) => ClubTimelineHelper.ClubAt(memberships, date, season?.Club);
+
+    private static string Initials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpper()
+            : name[..Math.Min(2, name.Length)].ToUpper();
+    }
+
+    private class TournamentForm
+    {
+        public string Name { get; set; } = "";
+        public EventType EventType { get; set; } = EventType.Tournoi;
+        public string City { get; set; } = "";
+        public DateTime Date { get; set; } = DateTime.Today;
+        public TimeOnly? KickoffTime { get; set; }
+    }
+
+    private class CompetitionForm
+    {
+        public string Name { get; set; } = "";
+        public string City { get; set; } = "";
+        public DateTime Date { get; set; } = DateTime.Today;
+    }
+
+    private class SeasonEditForm
+    {
+        public string Category { get; set; } = "";
+        public int ClubId { get; set; }
+        public string StartMonth { get; set; } = "";
+        public string EndMonth { get; set; } = "";
+    }
+
+    private class TrainingForm
+    {
+        public DateOnly Date { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public TimeOnly StartTime { get; set; } = new(18, 0);
+        public TimeOnly EndTime { get; set; } = new(19, 30);
+        public string Location { get; set; } = "";
+    }
+}

@@ -1,0 +1,23 @@
+@* Identifie rapidement le joueur concerné par la page/le formulaire : nom + maillot avec numéro, coloré selon son club actuel. *@
+
+@if (Player is not null)
+{
+    <div class="player-id-badge">
+        @if (Player.PreferredNumber is not null)
+        {
+            <svg viewBox="0 0 36 36" width="30" height="30" style="flex-shrink: 0;">
+                <path d="M11 3 L2 9 L6 16 L9.5 13.5 L9.5 33 H26.5 V13.5 L30 16 L34 9 L25 3 L21.5 5.5 A4.5 4.5 0 0 1 14.5 5.5 Z"
+                      fill="@(Club?.JerseyColor ?? DefaultJerseyColor)" stroke="rgba(0,0,0,0.18)" stroke-width="1"></path>
+                <text x="18" y="24" font-family="var(--font-display)" font-size="13" fill="#fff" text-anchor="middle">@Player.PreferredNumber</text>
+            </svg>
+        }
+        <span class="player-id-name">@Player.FirstName @Player.LastName</span>
+    </div>
+}
+
+@code {
+    private const string DefaultJerseyColor = "#1D4ED8";
+
+    [Parameter] public Player? Player { get; set; }
+    [Parameter] public Club? Club { get; set; }
+}

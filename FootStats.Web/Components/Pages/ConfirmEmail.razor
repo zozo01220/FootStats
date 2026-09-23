@@ -1,0 +1,75 @@
+@page "/confirmer/{Token}"
+@attribute [AllowAnonymous]
+@layout Layout.EmptyLayout
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject InvitationService InvitationSvc
+
+<PageTitle>Confirmation d'email - FootStats</PageTitle>
+
+<div class="login-shell">
+    <div class="login-pitch">
+        <div class="login-glow" aria-hidden="true"></div>
+        <div class="login-eyebrow">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--gold);"></div>
+            <span>Confirmation d'inscription</span>
+        </div>
+        <div class="login-titleblock">
+            <h1 class="login-title">
+                FOOT<span style="color: var(--gold);">STATS</span>
+            </h1>
+            <div class="login-subtitle">
+                @(invalidReason is null
+                    ? "Votre adresse email vient d'être confirmée."
+                    : "Ce lien de confirmation n'est plus valable.")
+            </div>
+        </div>
+    </div>
+
+    <div class="login-form-side">
+        <div class="card login-card">
+            <div class="login-card-handle" aria-hidden="true"></div>
+
+            @if (invalidReason is not null)
+            {
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <h1 style="font-size: 26px;">Lien invalide</h1>
+                    <div class="alert alert-danger">@invalidReason</div>
+                    <p class="empty-note">Recommencez votre inscription pour recevoir un nouveau lien de confirmation.</p>
+                    <a class="btn btn-primary btn-block" href="/inscription" style="margin-top: 8px;">Retour à l'inscription</a>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <h1 style="font-size: 26px;">Compte confirmé</h1>
+                    <div style="font-size: 14px; color: var(--muted);">
+                        Votre compte est actif. Vous pouvez vous connecter avec le mot de passe choisi à l'inscription.
+                    </div>
+                </div>
+                <a class="btn btn-primary btn-block" href="/login" style="margin-top: 8px;">Me connecter</a>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Token { get; set; } = "";
+
+    private string? invalidReason;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await InvitationSvc.ConfirmEmailAsync(Token);
+        if (!result.Success)
+        {
+            invalidReason = result.Error switch
+            {
+                InvitationAcceptError.Expired => "Ce lien de confirmation a expiré.",
+                InvitationAcceptError.AlreadyUsed => "Cette adresse email a déjà été confirmée.",
+                InvitationAcceptError.Revoked => "Ce compte a été révoqué.",
+                _ => "Ce lien de confirmation est invalide."
+            };
+        }
+    }
+}

@@ -1,0 +1,215 @@
+@page "/inscription"
+@attribute [AllowAnonymous]
+@layout Layout.EmptyLayout
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject InvitationService InvitationSvc
+@inject IConfiguration Configuration
+
+<PageTitle>Créer un compte - FootStats</PageTitle>
+
+<div class="login-shell">
+    <div class="login-pitch">
+        <div class="login-glow" aria-hidden="true"></div>
+        <div class="login-eyebrow">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--gold);"></div>
+            <span>Nouvel espace famille</span>
+        </div>
+        <div class="login-titleblock">
+            <h1 class="login-title">
+                FOOT<span style="color: var(--gold);">STATS</span>
+            </h1>
+            <div class="login-subtitle">Créez votre compte administrateur et commencez à suivre vos enfants : joueurs, clubs, saisons et matchs, le tout en un seul endroit.</div>
+        </div>
+        <div style="position: relative; z-index: 1; display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: rgba(255,255,255,0.88); font-weight: 600;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="2"><path d="M20 6L9 17l-5-5"></path></svg>
+                Ajoutez vos enfants et leurs clubs
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: rgba(255,255,255,0.88); font-weight: 600;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="2"><path d="M20 6L9 17l-5-5"></path></svg>
+                Suivez matchs, buts et statistiques
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 14px; color: rgba(255,255,255,0.88); font-weight: 600;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--gold)" stroke-width="2"><path d="M20 6L9 17l-5-5"></path></svg>
+                Invitez le reste de la famille ensuite
+            </div>
+        </div>
+    </div>
+
+    <div class="login-form-side">
+        <div class="card login-card">
+            <div class="login-card-handle" aria-hidden="true"></div>
+
+            @if (registered)
+            {
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <h1 style="font-size: 24px;">Vérifiez votre boîte mail</h1>
+                    <div style="font-size: 14px; color: var(--muted);">
+                        Un email de confirmation a été envoyé à <strong>@form.Email</strong>. Cliquez sur le lien qu'il contient pour activer votre compte.
+                    </div>
+                </div>
+                @if (sendWarning is not null)
+                {
+                    <div class="alert alert-danger">@sendWarning</div>
+                }
+                <div class="foot-link" style="text-align: center; font-size: 13px; color: var(--muted); margin-top: 4px;">
+                    <a href="/login" style="color: var(--gold-dark); font-weight: 700;">Retour à la connexion</a>
+                </div>
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <h1 style="font-size: 22px; margin: 0;">Créer mon compte</h1>
+                    <div style="font-size: 12.5px; color: var(--muted);">Gratuit, en moins d'une minute.</div>
+                </div>
+
+                @if (formError is not null)
+                {
+                    <div class="alert alert-danger">@formError</div>
+                }
+
+                @if (GoogleEnabled || MicrosoftEnabled)
+                {
+                    <div class="oauth-buttons">
+                        @if (GoogleEnabled)
+                        {
+                            <a class="btn-oauth" href="/account/external-login/Google">
+                                <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.6 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.68-3.87 2.68-6.62z"></path><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"></path><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"></path><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.46.9 11.42 0 9 0A9 9 0 0 0 .96 4.97L3.95 7.3C4.66 5.17 6.65 3.58 9 3.58z"></path></svg>
+                                S'inscrire avec Google
+                            </a>
+                        }
+                        @if (MicrosoftEnabled)
+                        {
+                            <a class="btn-oauth" href="/account/external-login/Microsoft">
+                                <svg width="16" height="16" viewBox="0 0 16 16"><rect width="7" height="7" x="0" y="0" fill="#F25022"></rect><rect width="7" height="7" x="9" y="0" fill="#7FBA00"></rect><rect width="7" height="7" x="0" y="9" fill="#00A4EF"></rect><rect width="7" height="7" x="9" y="9" fill="#FFB900"></rect></svg>
+                                S'inscrire avec Microsoft
+                            </a>
+                        }
+                    </div>
+                    <div class="oauth-divider">ou avec un e-mail</div>
+                }
+
+                <EditForm Model="form" OnValidSubmit="Submit" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="field">
+                            <label>Prénom</label>
+                            <input @bind="form.FirstName" />
+                        </div>
+                        <div class="field">
+                            <label>Nom</label>
+                            <input @bind="form.LastName" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Email</label>
+                        <input type="email" @bind="form.Email" />
+                    </div>
+                    <div>
+                        <div class="field">
+                            <label>Mot de passe</label>
+                            <PasswordField @bind-Value="form.Password" />
+                        </div>
+                        <p class="empty-note" style="font-size: 11.5px; margin: 4px 0 0; padding: 0;">6 caractères minimum.</p>
+                    </div>
+                    <div class="field">
+                        <label>Confirmer le mot de passe</label>
+                        <PasswordField @bind-Value="form.PasswordConfirm" />
+                    </div>
+
+                    <button class="btn btn-primary btn-block" type="submit" disabled="@submitting" style="margin-top: 2px;">
+                        @(submitting ? "Création..." : "Créer mon compte")
+                    </button>
+                </EditForm>
+
+                <div style="text-align: center; font-size: 13px; color: var(--muted);">
+                    Déjà un compte ? <a href="/login" style="color: var(--gold-dark); font-weight: 700;">Se connecter</a>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private RegisterForm form = new();
+    private string? formError;
+    private string? sendWarning;
+    private bool submitting;
+    private bool registered;
+
+    private bool GoogleEnabled => !string.IsNullOrEmpty(Configuration["Authentication:Google:ClientId"]);
+    private bool MicrosoftEnabled => !string.IsNullOrEmpty(Configuration["Authentication:Microsoft:ClientId"]);
+
+    private async Task Submit()
+    {
+        formError = null;
+
+        if (string.IsNullOrWhiteSpace(form.FirstName) || string.IsNullOrWhiteSpace(form.LastName))
+        {
+            formError = "Prénom et nom sont obligatoires.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(form.Email))
+        {
+            formError = "Une adresse email est obligatoire.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(form.Password) || form.Password.Length < 6)
+        {
+            formError = "Le mot de passe doit contenir au moins 6 caractères.";
+            return;
+        }
+        if (form.Password != form.PasswordConfirm)
+        {
+            formError = "Les mots de passe ne correspondent pas.";
+            return;
+        }
+
+        var email = form.Email.Trim();
+        var emailTaken = await Db.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == email.ToLower());
+        if (emailTaken)
+        {
+            formError = "Cette adresse email est déjà utilisée par un compte existant.";
+            return;
+        }
+
+        submitting = true;
+
+        var existingUsernames = await Db.Users.Select(u => u.Username).ToListAsync();
+        var username = UsernameGenerator.Generate(form.FirstName, form.LastName, existingUsernames);
+
+        var newUser = new AppUser
+        {
+            Username = username,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(form.Password),
+            FirstName = form.FirstName.Trim(),
+            LastName = form.LastName.Trim(),
+            Email = email,
+            Role = UserRole.Admin,
+            IsActive = false
+        };
+        Db.Users.Add(newUser);
+        await Db.SaveChangesAsync();
+
+        try
+        {
+            await InvitationSvc.CreateAndSendEmailVerificationAsync(newUser.Id);
+        }
+        catch (Exception ex)
+        {
+            sendWarning = $"Votre compte a été créé, mais l'envoi de l'email de confirmation a échoué : {ex.Message}. Contactez un administrateur pour activer votre compte.";
+        }
+
+        submitting = false;
+        registered = true;
+    }
+
+    private class RegisterForm
+    {
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public string Password { get; set; } = "";
+        public string PasswordConfirm { get; set; } = "";
+    }
+}

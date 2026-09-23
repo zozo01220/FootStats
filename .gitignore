@@ -1,0 +1,18 @@
+bin/
+obj/
+data/
+*.db
+*.db-shm
+*.db-wal
+.vs/
+
+# Sortie de build/publish (binaires) et fichiers utilisateur d'IDE
+FootStats.Web/publish/
+*.csproj.user
+
+# Photos/logos uploadés par les utilisateurs (données personnelles, pas du code source ;
+# stockées en prod sur un volume persistant séparé, voir README)
+FootStats.Web/wwwroot/uploads/
+
+# Verrous/état runtime d'outils locaux
+.claude/scheduled_tasks.lock

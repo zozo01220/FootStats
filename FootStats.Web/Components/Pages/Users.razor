@@ -1,0 +1,1006 @@
+@page "/users"
+@attribute [Authorize(Roles = "Admin,SuperAdmin")]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject IJSRuntime JS
+@inject CurrentUserService CurrentUser
+@inject InvitationService InvitationSvc
+@inject ShareInviteService ShareInviteSvc
+
+<PageTitle>Utilisateurs</PageTitle>
+
+<div class="container">
+    @if (isSuperAdmin)
+    {
+        <PageHero Accent="system" Eyebrow="Accès" Title="Administrateurs" Subtitle="Les comptes qui gèrent chacun leur propre famille." />
+    }
+    else
+    {
+        <div class="page-hero-with-action">
+            <PageHero Accent="system" Eyebrow="Accès" Title="Utilisateurs" Subtitle="Qui a accès à FootStats, et pour quels enfants." />
+            <button class="btn btn-secondary btn-share-compact" type="button" @onclick="OpenShare">
+                <svg viewBox="0 0 24 24" class="icon"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"></line><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"></line></svg>
+                Partager l'accès
+            </button>
+        </div>
+    }
+
+    @if (errorMessage is not null)
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    @if (displayUsers.Count == 0)
+    {
+        <p class="empty-note">Aucun @(isSuperAdmin ? "administrateur" : "utilisateur") pour le moment.</p>
+    }
+    <details class="collapsible" open>
+        <summary>
+            <span class="section-title" style="margin-bottom: 0;">
+                <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><path d="M20 6L9 17l-5-5"></path></svg>
+                Actifs
+                <span class="pill pill-gold" style="margin-left: 4px;">@activeUsers.Count</span>
+            </span>
+            <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+        </summary>
+        <div class="user-grid" style="margin-top: 14px;">
+            @if (activeUsers.Count == 0)
+            {
+                <p class="empty-note">Aucun @(isSuperAdmin ? "administrateur" : "utilisateur") actif pour le moment.</p>
+            }
+            @foreach (var user in activeUsers)
+            {
+                @UserCard(user)
+            }
+            <CreateFab @ref="fab" Label="@(isSuperAdmin ? "Nouvel administrateur" : "Nouvel utilisateur")">
+                <EditForm Model="form" OnValidSubmit="AddUser">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Prénom</label>
+                        <input @bind="form.FirstName" />
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Nom</label>
+                        <input @bind="form.LastName" />
+                    </div>
+                    @if (isSuperAdmin)
+                    {
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Email</label>
+                            <input type="email" @bind="form.Email" placeholder="Requis pour le prévenir en cas de réactivation" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Mot de passe</label>
+                            <PasswordField @bind-Value="form.Password" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Confirmer le mot de passe</label>
+                            <PasswordField @bind-Value="form.PasswordConfirm" />
+                        </div>
+                        @if (formError is not null)
+                        {
+                            <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@formError</p>
+                        }
+                        <button class="btn btn-primary" type="submit">Créer</button>
+                    }
+                    else
+                    {
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Email</label>
+                            <input type="email" @bind="form.Email" @bind:event="oninput" @bind:after="OnFormEmailChanged" placeholder="Requis pour envoyer une invitation" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Lien de parenté</label>
+                            <input @bind="form.Relationship" list="relationship-presets" placeholder="Papa, Maman, Tonton, Ami(e)..." />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Rôle</label>
+                            <select @bind="form.Role">
+                                <option value="@UserRole.User">Utilisateur (peut gérer joueurs, clubs, saisons)</option>
+                                <option value="@UserRole.Consultant">Consultant (lecture seule)</option>
+                            </select>
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Enfants concernés</label>
+                            @PlayerPicker(form.SelectedPlayerIds)
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Mot de passe</label>
+                            <PasswordField @bind-Value="form.Password" />
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Confirmer le mot de passe</label>
+                            <PasswordField @bind-Value="form.PasswordConfirm" />
+                        </div>
+                        <label class="ios-toggle-group" style="margin-bottom: 16px;">
+                            <span class="toggle-switch">
+                                <input type="checkbox" @bind="form.SendInvite" />
+                                <span class="toggle-slider"></span>
+                            </span>
+                            <span class="active">Envoyer une invitation par e-mail</span>
+                        </label>
+                        @if (formError is not null)
+                        {
+                            <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@formError</p>
+                        }
+                        <button class="btn btn-primary" type="submit">Créer</button>
+                    }
+                </EditForm>
+            </CreateFab>
+        </div>
+    </details>
+
+    @if (inactiveUsers.Count > 0)
+    {
+        <details class="collapsible" style="margin-top: 18px;">
+            <summary>
+                <span class="section-title" style="margin-bottom: 0;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--muted);"><circle cx="12" cy="12" r="10"></circle><path d="M4.9 4.9l14.2 14.2"></path></svg>
+                    Inactifs
+                    <span class="pill" style="margin-left: 4px;">@inactiveUsers.Count</span>
+                </span>
+                <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+            </summary>
+            <div class="user-grid" style="margin-top: 14px;">
+                @foreach (var user in inactiveUsers)
+                {
+                    @UserCard(user)
+                }
+            </div>
+        </details>
+    }
+
+    @if (!isSuperAdmin && pendingShareInvites.Count > 0)
+    {
+        <details class="collapsible" style="margin-top: 18px;" open>
+            <summary>
+                <span class="section-title" style="margin-bottom: 0;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--muted);"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="10"></circle></svg>
+                    Liens de partage en attente
+                    <span class="pill" style="margin-left: 4px;">@pendingShareInvites.Count</span>
+                </span>
+                <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+            </summary>
+            <div class="user-grid" style="margin-top: 14px;">
+                @foreach (var invite in pendingShareInvites)
+                {
+                    @ShareInviteCard(invite)
+                }
+            </div>
+        </details>
+    }
+</div>
+
+<Modal @ref="shareModal" Label="Partager l'accès">
+    <ShareLinkPanel @ref="sharePanel" AvailablePlayers="ownPlayers" OnGenerated="LoadPendingShareInvitesAsync" OnClosed="() => shareModal?.Close()" />
+</Modal>
+
+<datalist id="relationship-presets">
+    @foreach (var preset in RelationshipDisplay.Presets)
+    {
+        <option value="@preset"></option>
+    }
+</datalist>
+
+<Modal @ref="editModal" Label="@editModalLabel">
+    <EditForm Model="editForm" OnValidSubmit="SaveEdit">
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Prénom</label>
+            <input @bind="editForm.FirstName" />
+        </div>
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Nom</label>
+            <input @bind="editForm.LastName" />
+        </div>
+        @if (isSuperAdmin || (editingSelf && currentUser.Role == UserRole.Admin))
+        {
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Email</label>
+                <input type="email" @bind="editForm.Email" placeholder="Requis pour le prévenir en cas de réactivation" />
+            </div>
+        }
+        @if (!isSuperAdmin && !editingSelf)
+        {
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Email</label>
+                <input type="email" @bind="editForm.Email" placeholder="Requis pour envoyer une invitation" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Lien de parenté</label>
+                <input @bind="editForm.Relationship" list="relationship-presets" placeholder="Papa, Maman, Tonton, Ami(e)..." />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Rôle</label>
+                <select @bind="editForm.Role">
+                    <option value="@UserRole.User">Utilisateur (peut gérer joueurs, clubs, saisons)</option>
+                    <option value="@UserRole.Consultant">Consultant (lecture seule)</option>
+                </select>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Enfants concernés</label>
+                @PlayerPicker(editForm.SelectedPlayerIds)
+            </div>
+        }
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Nouveau mot de passe (optionnel)</label>
+            <PasswordField @bind-Value="editForm.Password" Placeholder="Laisser vide pour ne pas changer" />
+        </div>
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Confirmer le nouveau mot de passe</label>
+            <PasswordField @bind-Value="editForm.PasswordConfirm" />
+        </div>
+        @if (editFormError is not null)
+        {
+            <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@editFormError</p>
+        }
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+    </EditForm>
+
+    @if (!isSuperAdmin && !editingSelf)
+    {
+        var invitation = LatestInvitation(editingUserId);
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);">
+            <div class="section-title" style="font-size: 15px; margin-bottom: 10px;">Invitation</div>
+            <p class="empty-note" style="margin-bottom: 10px;">
+                @(invitation is null ? "Aucune invitation envoyée." : InvitationStatusLabel(invitation))
+            </p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                @if (invitation is null)
+                {
+                    <button class="btn btn-secondary" type="button" @onclick="() => SendInvitation(editingUserId)">Envoyer l'invitation</button>
+                }
+                else if (resendableUserIds.Contains(editingUserId))
+                {
+                    <button class="btn btn-secondary" type="button" @onclick="() => SendInvitation(editingUserId)">Renvoyer l'invitation</button>
+                }
+                @if (invitation is not null && invitation.Status != InvitationStatus.Revoked)
+                {
+                    <button class="btn btn-secondary" type="button" style="color: var(--danger);" @onclick="() => RevokeAccess(editingUserId)">Révoquer l'accès</button>
+                }
+            </div>
+        </div>
+    }
+
+    @if (isSuperAdmin)
+    {
+        var editingAdmin = displayUsers.FirstOrDefault(u => u.Id == editingUserId);
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);">
+            <div class="section-title" style="font-size: 15px; margin-bottom: 10px;">Statut du compte</div>
+            <p class="empty-note" style="margin-bottom: 10px;">
+                @(editingAdmin is null ? "" : editingAdmin.IsActive
+                    ? "Ce compte est actif."
+                    : "Ce compte est révoqué : il ne peut plus se connecter.")
+            </p>
+            @if (editingAdmin is not null)
+            {
+                <button class="btn btn-secondary" type="button" style="@(editingAdmin.IsActive ? "color: var(--danger);" : "")" @onclick="() => ToggleActive(editingAdmin)">
+                    @(editingAdmin.IsActive ? "Révoquer l'accès" : "Réactiver le compte")
+                </button>
+            }
+        </div>
+
+        <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line);">
+            <div class="section-title" style="font-size: 15px; margin-bottom: 10px;">Comptes famille de cet administrateur</div>
+            @if (familyUsers.Count == 0)
+            {
+                <p class="empty-note">Aucun compte famille créé par cet administrateur.</p>
+            }
+            else
+            {
+                <div class="family-list">
+                    @foreach (var member in familyUsers)
+                    {
+                        var memberCategory = RelationshipDisplay.Category(member.Relationship);
+                        <div class="family-list-item">
+                            @if (!string.IsNullOrWhiteSpace(member.Relationship))
+                            {
+                                <span class="relationship-chip @CategoryClass(memberCategory)">
+                                    <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="7" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>
+                                    @member.Relationship
+                                </span>
+                            }
+                            <span>@member.FirstName @member.LastName</span>
+                            @if (member.Role == UserRole.Consultant)
+                            {
+                                <span class="pill">Lecture seule</span>
+                            }
+                            @if (member.Players.Count > 0)
+                            {
+                                <span class="muted">— @string.Join(", ", member.Players.Select(p => $"{p.FirstName} {p.LastName}"))</span>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</Modal>
+
+@code {
+    private List<AppUser> users = [];
+    private List<AppUser> displayUsers = [];
+    private List<AppUser> activeUsers = [];
+    private List<AppUser> inactiveUsers = [];
+    private List<AppUser> familyUsers = [];
+    private List<Player> ownPlayers = [];
+    private UserForm form = new();
+    private UserForm editForm = new();
+
+    private static readonly System.Text.RegularExpressions.Regex BasicEmailPattern = new(@"^\S+@\S+\.\S+$");
+    private bool formEmailWasValid;
+
+    /// <summary>Active automatiquement l'interrupteur "Envoyer une invitation" dès que l'email saisi devient
+    /// valide (front montant seulement), sans jamais l'imposer si l'utilisateur l'a déjà désactivé manuellement.</summary>
+    private void OnFormEmailChanged()
+    {
+        var isValid = BasicEmailPattern.IsMatch(form.Email.Trim());
+        if (isValid && !formEmailWasValid)
+        {
+            form.SendInvite = true;
+        }
+        formEmailWasValid = isValid;
+    }
+
+    private int editingUserId;
+    private bool editingSelf;
+    private string editModalLabel = "";
+    private string? errorMessage;
+    private string? formError;
+    private string? editFormError;
+    private CreateFab? fab;
+    private Modal? editModal;
+    private Modal? shareModal;
+    private ShareLinkPanel? sharePanel;
+    private List<ShareInvite> pendingShareInvites = [];
+    private AppUser currentUser = null!;
+    private bool isSuperAdmin;
+
+    private void OpenShare()
+    {
+        sharePanel?.Reset();
+        shareModal?.Open();
+    }
+
+    private async Task LoadPendingShareInvitesAsync()
+    {
+        pendingShareInvites = await Db.ShareInvites
+            .Include(s => s.Players)
+            .Where(s => s.CreatedByAdminId == currentUser.Id && s.Status == ShareInviteStatus.Pending)
+            .OrderByDescending(s => s.CreatedAt)
+            .ToListAsync();
+    }
+
+    private async Task RevokeShareInvite(int shareInviteId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Révoquer ce lien de partage ?")) return;
+        await ShareInviteSvc.RevokeAsync(shareInviteId);
+        await LoadPendingShareInvitesAsync();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await CurrentUser.GetCurrentUserAsync();
+        isSuperAdmin = currentUser.Role == UserRole.SuperAdmin;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (isSuperAdmin)
+        {
+            users = await Db.Users.Where(u => u.Role == UserRole.Admin).OrderBy(u => u.FirstName).ToListAsync();
+            displayUsers = users;
+        }
+        else
+        {
+            ownPlayers = await Db.Players.Where(p => p.OwnerAdminId == currentUser.Id).OrderBy(p => p.FirstName).ToListAsync();
+            users = await Db.Users
+                .Include(u => u.Players)
+                .Where(u => (u.Role == UserRole.User || u.Role == UserRole.Consultant) && u.CreatedByAdminId == currentUser.Id)
+                .OrderBy(u => u.FirstName)
+                .ToListAsync();
+            displayUsers = [currentUser, .. users];
+        }
+
+        activeUsers = displayUsers.Where(u => u.IsActive).ToList();
+        inactiveUsers = displayUsers.Where(u => !u.IsActive).ToList();
+        await LoadInvitationsAsync();
+        if (!isSuperAdmin) await LoadPendingShareInvitesAsync();
+    }
+
+    private async Task LoadFamilyUsersAsync(int adminId)
+    {
+        familyUsers = await Db.Users
+            .Include(u => u.Players)
+            .Where(u => (u.Role == UserRole.User || u.Role == UserRole.Consultant) && u.CreatedByAdminId == adminId)
+            .OrderBy(u => u.FirstName)
+            .ToListAsync();
+    }
+
+    private int PlayerCount(int adminId) => playerCounts.TryGetValue(adminId, out var count) ? count : 0;
+    private Dictionary<int, int> playerCounts = new();
+
+    private static string CategoryClass(RelationshipCategory category) => category switch
+    {
+        RelationshipCategory.Homme => "homme",
+        RelationshipCategory.Femme => "femme",
+        _ => "neutre"
+    };
+
+    private static string Initials(AppUser u)
+    {
+        var a = u.FirstName.Length > 0 ? u.FirstName[0].ToString() : "";
+        var b = u.LastName.Length > 0 ? u.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    private static string RoleLabel(UserRole role) => role switch
+    {
+        UserRole.SuperAdmin => "Super administrateur",
+        UserRole.Admin => "Administrateur",
+        UserRole.User => "Utilisateur",
+        UserRole.Consultant => "Consultant",
+        _ => ""
+    };
+
+    private static void ToggleSelection(HashSet<int> set, int id, bool isChecked)
+    {
+        if (isChecked) set.Add(id);
+        else set.Remove(id);
+    }
+
+    private async Task AddUser()
+    {
+        formError = null;
+        var sendInvite = !isSuperAdmin && form.SendInvite;
+
+        if (string.IsNullOrWhiteSpace(form.FirstName) || string.IsNullOrWhiteSpace(form.LastName))
+        {
+            formError = "Prénom et nom sont obligatoires.";
+            return;
+        }
+        if (sendInvite && string.IsNullOrWhiteSpace(form.Email))
+        {
+            formError = "Une adresse email est requise pour envoyer une invitation.";
+            return;
+        }
+        if (!sendInvite)
+        {
+            if (string.IsNullOrWhiteSpace(form.Password) || form.Password.Length < 6)
+            {
+                formError = "Le mot de passe doit contenir au moins 6 caractères.";
+                return;
+            }
+            if (form.Password != form.PasswordConfirm)
+            {
+                formError = "Les mots de passe ne correspondent pas.";
+                return;
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(form.Email))
+        {
+            var wantedEmail = form.Email.Trim();
+            if (await Db.Users.AnyAsync(u => u.Email != null && u.Email.ToLower() == wantedEmail.ToLower()))
+            {
+                formError = "Cette adresse email est déjà utilisée par un autre compte.";
+                return;
+            }
+        }
+
+        var existingUsernames = await Db.Users.Select(u => u.Username).ToListAsync();
+        var username = UsernameGenerator.Generate(form.FirstName, form.LastName, existingUsernames);
+
+        // En mode invitation, un mot de passe aléatoire inutilisable est haché : le vrai mot de passe
+        // sera choisi par l'utilisateur via le lien d'invitation (AcceptAsync).
+        var initialPassword = sendInvite ? Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N") : form.Password;
+
+        var newUser = new AppUser
+        {
+            Username = username,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(initialPassword),
+            FirstName = form.FirstName.Trim(),
+            LastName = form.LastName.Trim(),
+            Email = string.IsNullOrWhiteSpace(form.Email) ? null : form.Email.Trim(),
+            Relationship = string.IsNullOrWhiteSpace(form.Relationship) ? null : form.Relationship.Trim(),
+            Role = isSuperAdmin ? UserRole.Admin : form.Role,
+            CreatedByAdminId = isSuperAdmin ? null : currentUser.Id
+        };
+
+        if (!isSuperAdmin)
+        {
+            // Un Admin ne peut lier que ses propres enfants.
+            var selectedIds = form.SelectedPlayerIds.Intersect(ownPlayers.Select(p => p.Id)).ToHashSet();
+            newUser.Players = ownPlayers.Where(p => selectedIds.Contains(p.Id)).ToList();
+        }
+
+        Db.Users.Add(newUser);
+        await Db.SaveChangesAsync();
+
+        if (sendInvite)
+        {
+            try
+            {
+                await InvitationSvc.CreateAndSendAsync(newUser.Id, currentUser.Id);
+            }
+            catch (Exception ex)
+            {
+                formError = $"Utilisateur créé, mais l'envoi de l'invitation a échoué : {ex.Message}";
+            }
+        }
+
+        form = new UserForm();
+        formEmailWasValid = false;
+        fab?.Close();
+        await LoadAsync();
+        if (isSuperAdmin) await LoadPlayerCountsAsync();
+    }
+
+    private async Task SendInvitation(int userId)
+    {
+        errorMessage = null;
+        try
+        {
+            await InvitationSvc.CreateAndSendAsync(userId, currentUser.Id);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Échec de l'envoi de l'invitation : {ex.Message}";
+        }
+        await LoadInvitationsAsync();
+    }
+
+    private async Task RevokeAccess(int userId)
+    {
+        var user = displayUsers.FirstOrDefault(u => u.Id == userId);
+        var label = user is not null ? $"{user.FirstName} {user.LastName}" : "cet utilisateur";
+        if (!await JS.InvokeAsync<bool>("confirm", $"Révoquer l'accès de {label} ?")) return;
+        await InvitationSvc.RevokeAsync(userId);
+        await LoadAsync();
+        editModal?.Close();
+    }
+
+    private Dictionary<int, Invitation> latestInvitations = new();
+    private HashSet<int> resendableUserIds = new();
+    private HashSet<int> sharedViaLinkUserIds = new();
+
+    private async Task LoadInvitationsAsync()
+    {
+        if (isSuperAdmin) return;
+        var userIds = displayUsers.Select(u => u.Id).ToList();
+        var invitations = await Db.Invitations
+            .Where(i => userIds.Contains(i.UserId))
+            .OrderByDescending(i => i.CreatedAt)
+            .ToListAsync();
+        latestInvitations = invitations
+            .GroupBy(i => i.UserId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        resendableUserIds.Clear();
+        foreach (var id in userIds)
+        {
+            if (await InvitationSvc.CanResendAsync(id))
+            {
+                resendableUserIds.Add(id);
+            }
+        }
+
+        sharedViaLinkUserIds = (await Db.ShareInvites
+            .Where(s => s.ClaimedByUserId != null && userIds.Contains(s.ClaimedByUserId.Value))
+            .Select(s => s.ClaimedByUserId!.Value)
+            .ToListAsync())
+            .ToHashSet();
+    }
+
+    private Invitation? LatestInvitation(int userId) => latestInvitations.TryGetValue(userId, out var inv) ? inv : null;
+
+    private static string InvitationStatusLabel(Invitation invitation) => invitation.Status switch
+    {
+        InvitationStatus.Sent => $"Invitation envoyée le {invitation.SentAt:dd/MM/yyyy}",
+        InvitationStatus.Accepted => $"Invitation acceptée le {invitation.AcceptedAt:dd/MM/yyyy}",
+        InvitationStatus.Expired => "Invitation expirée",
+        InvitationStatus.Revoked => "Accès révoqué",
+        _ => ""
+    };
+
+    private async Task LoadPlayerCountsAsync()
+    {
+        playerCounts = await Db.Players
+            .Where(p => p.OwnerAdminId != null)
+            .GroupBy(p => p.OwnerAdminId!.Value)
+            .Select(g => new { AdminId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.AdminId, x => x.Count);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && isSuperAdmin)
+        {
+            await LoadPlayerCountsAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenEdit(AppUser user)
+    {
+        editingUserId = user.Id;
+        editingSelf = !isSuperAdmin && user.Id == currentUser.Id;
+        editFormError = null;
+        editForm = new UserForm
+        {
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Relationship = user.Relationship ?? "",
+            Role = user.Role,
+            Email = user.Email ?? "",
+            SelectedPlayerIds = user.Players.Select(p => p.Id).ToHashSet()
+        };
+        editModalLabel = editingSelf
+            ? "Mon compte"
+            : isSuperAdmin ? "Modifier l'administrateur" : "Modifier l'utilisateur";
+
+        if (isSuperAdmin)
+        {
+            await LoadFamilyUsersAsync(user.Id);
+        }
+
+        editModal?.Open();
+    }
+
+    private async Task SaveEdit()
+    {
+        editFormError = null;
+
+        if (string.IsNullOrWhiteSpace(editForm.FirstName) || string.IsNullOrWhiteSpace(editForm.LastName))
+        {
+            editFormError = "Prénom et nom sont obligatoires.";
+            return;
+        }
+        if (!string.IsNullOrEmpty(editForm.Password) || !string.IsNullOrEmpty(editForm.PasswordConfirm))
+        {
+            if (editForm.Password.Length < 6)
+            {
+                editFormError = "Le mot de passe doit contenir au moins 6 caractères.";
+                return;
+            }
+            if (editForm.Password != editForm.PasswordConfirm)
+            {
+                editFormError = "Les mots de passe ne correspondent pas.";
+                return;
+            }
+        }
+
+        AppUser? user;
+        if (editingSelf)
+        {
+            user = await Db.Users.FindAsync(editingUserId);
+        }
+        else if (isSuperAdmin)
+        {
+            user = await Db.Users.Include(u => u.Players).FirstOrDefaultAsync(u => u.Id == editingUserId && u.Role == UserRole.Admin);
+        }
+        else
+        {
+            user = await Db.Users.Include(u => u.Players).FirstOrDefaultAsync(u =>
+                u.Id == editingUserId
+                && (u.Role == UserRole.User || u.Role == UserRole.Consultant)
+                && u.CreatedByAdminId == currentUser.Id);
+        }
+        if (user is null) return;
+
+        if (!string.IsNullOrWhiteSpace(editForm.Email))
+        {
+            var wantedEmail = editForm.Email.Trim();
+            var takenByAnother = await Db.Users.AnyAsync(u =>
+                u.Id != user.Id && u.Email != null && u.Email.ToLower() == wantedEmail.ToLower());
+            if (takenByAnother)
+            {
+                editFormError = "Cette adresse email est déjà utilisée par un autre compte.";
+                return;
+            }
+        }
+
+        user.FirstName = editForm.FirstName.Trim();
+        user.LastName = editForm.LastName.Trim();
+        if (!string.IsNullOrEmpty(editForm.Password))
+        {
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(editForm.Password);
+        }
+
+        if (isSuperAdmin || (editingSelf && currentUser.Role == UserRole.Admin))
+        {
+            user.Email = string.IsNullOrWhiteSpace(editForm.Email) ? null : editForm.Email.Trim();
+        }
+
+        if (!isSuperAdmin && !editingSelf)
+        {
+            user.Relationship = string.IsNullOrWhiteSpace(editForm.Relationship) ? null : editForm.Relationship.Trim();
+            user.Role = editForm.Role;
+            user.Email = string.IsNullOrWhiteSpace(editForm.Email) ? null : editForm.Email.Trim();
+            var selectedIds = editForm.SelectedPlayerIds.Intersect(ownPlayers.Select(p => p.Id)).ToHashSet();
+            var selectedPlayers = ownPlayers.Where(p => selectedIds.Contains(p.Id)).ToList();
+            user.Players.Clear();
+            foreach (var player in selectedPlayers)
+            {
+                user.Players.Add(player);
+            }
+        }
+
+        await Db.SaveChangesAsync();
+        editModal?.Close();
+        await LoadAsync();
+    }
+
+    private RenderFragment PlayerPicker(HashSet<int> selectedIds) => @<div class="player-picker">
+        @if (ownPlayers.Count == 0)
+        {
+            <div class="player-picker-empty">Aucun enfant créé pour le moment.</div>
+        }
+        else
+        {
+            @foreach (var player in ownPlayers)
+            {
+                var isChecked = selectedIds.Contains(player.Id);
+                <label class="player-picker-row @(isChecked ? "checked" : "")">
+                    <span class="player-picker-avatar">
+                        @if (!string.IsNullOrEmpty(player.PhotoPath))
+                        {
+                            <img src="@player.PhotoPath" alt="" />
+                        }
+                        else
+                        {
+                            @PlayerInitials(player)
+                        }
+                    </span>
+                    <span class="player-picker-info">
+                        <span class="player-picker-name">@player.FirstName @player.LastName</span>
+                        <span class="player-picker-role">@player.Position</span>
+                    </span>
+                    <span class="toggle-switch player-picker-check">
+                        <input type="checkbox" checked="@isChecked"
+                               @onchange="e => ToggleSelection(selectedIds, player.Id, (bool)e.Value!)" />
+                        <span class="toggle-slider"></span>
+                    </span>
+                </label>
+            }
+        }
+    </div>;
+
+    private static string PlayerInitials(Player p)
+    {
+        var a = p.FirstName.Length > 0 ? p.FirstName[0].ToString() : "";
+        var b = p.LastName.Length > 0 ? p.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    private const int OnlineThresholdSeconds = 45;
+
+    private static bool IsOnline(AppUser user) =>
+        user.LastSeenAt is { } lastSeen && (DateTime.UtcNow - lastSeen) < TimeSpan.FromSeconds(OnlineThresholdSeconds);
+
+    private static string LastSeenLabel(AppUser user)
+    {
+        if (user.LastSeenAt is not { } lastSeen) return "Jamais connecté";
+        if (IsOnline(user)) return "Actif à l'instant";
+
+        var elapsed = DateTime.UtcNow - lastSeen;
+        if (elapsed < TimeSpan.FromMinutes(60)) return $"Actif il y a {(int)elapsed.TotalMinutes} min";
+        if (elapsed < TimeSpan.FromHours(24)) return $"Actif il y a {(int)elapsed.TotalHours} h";
+        return $"Vu le {lastSeen.ToLocalTime():dd/MM/yyyy à HH:mm}";
+    }
+
+    private async Task DisconnectUser(int userId)
+    {
+        if (!await JS.InvokeAsync<bool>("confirm", "Déconnecter cet administrateur ? Il devra se reconnecter mais conserve son accès.")) return;
+        await CurrentUser.ForceLogoutAsync(userId);
+        await LoadAsync();
+    }
+
+    private async Task ToggleActive(AppUser user)
+    {
+        if (!isSuperAdmin && user.Id == currentUser.Id) return;
+
+        if (isSuperAdmin)
+        {
+            // Pour un administrateur, "inactif" = accès révoqué : la réactivation prévient
+            // l'intéressé par email (il garde son ancien mot de passe ou en choisit un nouveau).
+            var entity = await Db.Users.FindAsync(user.Id);
+            if (entity is null) return;
+
+            if (entity.IsActive)
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"Révoquer l'accès de {entity.FirstName} {entity.LastName} ? Il ne pourra plus se connecter tant que vous ne l'aurez pas réactivé.")) return;
+                await InvitationSvc.RevokeAsync(entity.Id);
+            }
+            else
+            {
+                if (!await JS.InvokeAsync<bool>("confirm", $"Réactiver {entity.FirstName} {entity.LastName} ?")) return;
+                entity.IsActive = true;
+                await Db.SaveChangesAsync();
+                try
+                {
+                    await InvitationSvc.SendReactivationNoticeAsync(entity.Id, currentUser.Id);
+                }
+                catch (Exception ex)
+                {
+                    errorMessage = $"Compte réactivé, mais l'envoi de l'email n'a pas pu être effectué : {ex.Message}";
+                }
+            }
+
+            editModal?.Close();
+            await LoadAsync();
+            return;
+        }
+
+        var question = user.IsActive
+            ? $"Marquer {user.FirstName} {user.LastName} comme inactif ?"
+            : $"Réactiver {user.FirstName} {user.LastName} ?";
+        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+
+        var simpleEntity = await Db.Users.FindAsync(user.Id);
+        if (simpleEntity is null) return;
+        simpleEntity.IsActive = !simpleEntity.IsActive;
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private RenderFragment ShareInviteCard(ShareInvite invite) => @<div class="user-card share-invite-card">
+        <div class="card-crest">
+            <div class="card-badge">
+                <svg viewBox="0 0 24 24" class="icon" style="width: 18px; height: 18px;"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"></line><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"></line></svg>
+            </div>
+            <span class="club-acronym-caption">@(invite.Role == UserRole.Consultant ? "Consultant" : "Utilisateur")</span>
+        </div>
+        <div class="card-body">
+            <div class="card-title-row">
+                <div class="card-title">@ShareInviteService.PlayerNames(invite.Players)</div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(invite.Relationship))
+            {
+                <div class="card-line">
+                    <span class="relationship-chip @CategoryClass(RelationshipDisplay.Category(invite.Relationship)) inline-chip">
+                        <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="7" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>
+                        @invite.Relationship
+                    </span>
+                </div>
+            }
+            <div class="card-line">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M12 8v4l3 3"></path><circle cx="12" cy="12" r="10"></circle></svg>
+                <span>Expire le @invite.ExpiresAt.ToString("dd/MM/yyyy")</span>
+            </div>
+            @if (invite.RecipientEmailHint is not null)
+            {
+                <div class="card-line">
+                    <svg viewBox="0 0 24 24" class="icon"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M22 6L12 13 2 6"></path></svg>
+                    <span>@invite.RecipientEmailHint</span>
+                </div>
+            }
+            <div class="card-actions-row">
+                <button class="btn btn-revoke" type="button" style="flex: 1;" @onclick="() => RevokeShareInvite(invite.Id)">Révoquer</button>
+            </div>
+        </div>
+    </div>;
+
+    private RenderFragment UserCard(AppUser user) => @<div class="user-card" @onclick="() => OpenEdit(user)">
+        @{
+            var isSelf = !isSuperAdmin && user.Id == currentUser.Id;
+            var category = RelationshipDisplay.Category(user.Relationship);
+        }
+        <div class="card-crest">
+            @{
+                var starClass = isSuperAdmin || isSelf ? "" : user.Role switch
+                {
+                    UserRole.User => "silver",
+                    UserRole.Consultant => "bronze",
+                    _ => ""
+                };
+            }
+            @if (isSuperAdmin || isSelf)
+            {
+                <span class="admin-star" title="Administrateur" aria-label="Administrateur">
+                    <svg viewBox="0 0 24 24" class="icon" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                </span>
+            }
+            else if (!string.IsNullOrEmpty(starClass))
+            {
+                <span class="admin-star @starClass" title="@RoleLabel(user.Role)" aria-label="@RoleLabel(user.Role)">
+                    <svg viewBox="0 0 24 24" class="icon" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                </span>
+            }
+            @if (isSuperAdmin)
+            {
+                <span class="session-status-badge @(IsOnline(user) ? "online" : "offline")">
+                    <span class="session-status-dot"></span>
+                    @(IsOnline(user) ? "En ligne" : "Hors ligne")
+                </span>
+            }
+            <div class="card-badge">@Initials(user)</div>
+            <span class="club-acronym-caption">@RoleLabel(user.Role)</span>
+        </div>
+        <div class="card-body">
+            <div class="card-title-row">
+                <div class="card-title">@user.FirstName @user.LastName</div>
+                @if (!isSuperAdmin && !isSelf && !string.IsNullOrWhiteSpace(user.Relationship))
+                {
+                    <span class="relationship-chip @CategoryClass(category) inline-chip">
+                        <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="7" r="4"></circle><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path></svg>
+                        @user.Relationship
+                    </span>
+                }
+            </div>
+            @if (!isSuperAdmin && !isSelf && sharedViaLinkUserIds.Contains(user.Id))
+            {
+                <div class="card-line">
+                    <svg viewBox="0 0 24 24" class="icon"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"></line><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"></line></svg>
+                    <span>Accès obtenu via un lien de partage</span>
+                </div>
+            }
+            else if (!isSuperAdmin && !isSelf)
+            {
+                var invitation = LatestInvitation(user.Id);
+                @if (invitation is not null)
+                {
+                    <div class="card-tags-row">
+                        <span class="pill">@InvitationStatusLabel(invitation)</span>
+                    </div>
+                }
+            }
+            <div class="card-line">
+                <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="11" width="18" height="10" rx="2"></rect><path d="M7 11V8a5 5 0 0 1 10 0v3"></path></svg>
+                <span>@user.Username</span>
+            </div>
+            @if (isSuperAdmin)
+            {
+                <div class="card-tags-row">
+                    <span class="pill">@PlayerCount(user.Id) enfant@(PlayerCount(user.Id) > 1 ? "s" : "")</span>
+                </div>
+                <div class="card-line">
+                    <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                    <span>@LastSeenLabel(user)</span>
+                </div>
+            }
+            else if (user.Players.Count > 0)
+            {
+                <div class="card-line">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span>@string.Join(", ", user.Players.Select(p => $"{p.FirstName} {p.LastName}"))</span>
+                </div>
+            }
+            @if (!isSelf)
+            {
+                <div class="card-actions-row">
+                    @if (isSuperAdmin && IsOnline(user))
+                    {
+                        <button class="btn btn-secondary" style="flex: 1;" type="button" @onclick:stopPropagation="true" @onclick="() => DisconnectUser(user.Id)">
+                            <svg viewBox="0 0 24 24" class="icon"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                            <span>Déconnecter</span>
+                        </button>
+                    }
+                    <button class="btn btn-revoke" style="flex: 1;" type="button" @onclick:stopPropagation="true" @onclick="() => ToggleActive(user)">
+                        @if (user.IsActive)
+                        {
+                            <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="5" rx="1"></rect><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"></path><path d="M10 13h4"></path></svg>
+                            <span>Révoquer</span>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" class="icon"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path></svg>
+                            <span>Réactiver</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>;
+
+    private class UserForm
+    {
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string Relationship { get; set; } = "";
+        public UserRole Role { get; set; } = UserRole.User;
+        public string Email { get; set; } = "";
+        public bool SendInvite { get; set; }
+        public string Password { get; set; } = "";
+        public string PasswordConfirm { get; set; } = "";
+        public HashSet<int> SelectedPlayerIds { get; set; } = [];
+    }
+}

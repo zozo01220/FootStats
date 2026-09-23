@@ -1,0 +1,780 @@
+@page "/"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject NavigationManager Navigation
+@inject CurrentUserService CurrentUser
+@inject StatsService Stats
+@inject IJSRuntime JS
+
+<PageTitle>Saisons - FootStats</PageTitle>
+
+<div class="container">
+    <PageHero Eyebrow="Club & famille" Title="Saisons" Subtitle="Toutes les saisons suivies, club après club." />
+
+    @if (needsSetup)
+    {
+        <div class="onboard-card">
+            <div class="onboard-head">
+                <div class="onboard-ball">
+                    <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 6l3 2.2-1.1 3.5H10.1L9 8.2z"></path></svg>
+                </div>
+                <div>
+                    <div class="onboard-title">C'EST PARTI !</div>
+                    <div class="onboard-desc">Deux étapes avant de pouvoir créer une saison.</div>
+                </div>
+            </div>
+
+            <div class="onboard-steps">
+                <a class="onboard-step" href="/players">
+                    <div class="onboard-step-num @(players.Count > 0 ? "done" : "")">1</div>
+                    <div class="onboard-step-body">
+                        <div class="onboard-step-title">Ajouter un joueur</div>
+                        <div class="onboard-step-desc">Nom, date de naissance, poste, photo.</div>
+                    </div>
+                    <svg class="onboard-step-arrow" viewBox="0 0 24 24" width="17" height="17"><path d="M9 18l6-6-6-6"></path></svg>
+                </a>
+                <a class="onboard-step" href="/clubs">
+                    <div class="onboard-step-num @(myClubIds.Count > 0 ? "done" : "")">2</div>
+                    <div class="onboard-step-body">
+                        <div class="onboard-step-title">Sélectionner ou créer un club</div>
+                        <div class="onboard-step-desc">Nom, logo, couleurs.</div>
+                    </div>
+                    <svg class="onboard-step-arrow" viewBox="0 0 24 24" width="17" height="17"><path d="M9 18l6-6-6-6"></path></svg>
+                </a>
+            </div>
+
+            <div class="onboard-foot">Une fois les deux prêts, le bouton <b>+</b> en bas à droite permet de créer la première saison.</div>
+        </div>
+    }
+    @if (!needsSetup)
+    {
+    <details class="collapsible" open>
+        <summary>
+            <span class="section-title" style="margin-bottom: 0;">
+                <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                Saison en cours
+                <span class="pill pill-gold" style="margin-left: 4px;">@currentSeasons.Count</span>
+            </span>
+            <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+        </summary>
+    <div class="season-grid" style="margin-top: 14px;">
+        @if (currentSeasons.Count == 0)
+        {
+            <p class="empty-note desktop-hide-note">Aucune saison en cours.</p>
+        }
+        @foreach (var season in currentSeasons)
+        {
+            @SeasonCard(season, true)
+        }
+        @if (canManage)
+        {
+            <CreateFab @ref="fab" Label="Nouvelle saison" Emphasized="@(currentSeasons.Count == 0)">
+                <EditForm Model="form" OnValidSubmit="AddSeason">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Joueur</label>
+                        <select @bind="form.PlayerId">
+                            <option value="0">-- Choisir --</option>
+                            @foreach (var player in players)
+                            {
+                                <option value="@player.Id">@player.FirstName @player.LastName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Sport</label>
+                        <select @bind="form.Sport">
+                            @foreach (var sport in Enum.GetValues<Sport>())
+                            {
+                                <option value="@sport">@SportDisplay.Label(sport)</option>
+                            }
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                        <div class="field" style="flex: 1; margin-bottom: 0;">
+                            <label>Début de saison</label>
+                            <input type="text" placeholder="2026-09" @bind="form.StartMonth" @bind:event="oninput" />
+                        </div>
+                        <div class="field" style="flex: 1; margin-bottom: 0;">
+                            <label>Fin de saison</label>
+                            <input type="text" placeholder="2027-07" @bind="form.EndMonth" @bind:event="oninput" />
+                        </div>
+                    </div>
+                    @{ var previewLabel = ComputeLabel(form.StartMonth, form.EndMonth); }
+                    @if (previewLabel is not null)
+                    {
+                        <p class="empty-note" style="padding: 0 0 8px;">Saison calculée : <strong>@previewLabel</strong></p>
+                    }
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Catégorie</label>
+                        <select @bind="form.Category">
+                            <option value="">-- Choisir --</option>
+                            @foreach (var category in SeasonCategoryOptions.ForSelect(form.Category))
+                            {
+                                <option value="@category">@category</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Club</label>
+                        <select @bind="form.ClubId">
+                            <option value="0">-- Choisir --</option>
+                            @foreach (var club in clubs)
+                            {
+                                <option value="@club.Id">@club.Name</option>
+                            }
+                        </select>
+                    </div>
+                    @if (players.Count == 0)
+                    {
+                        <p class="empty-note">Crée d'abord un <a href="/players" style="color: var(--pitch); font-weight: 600;">joueur</a>.</p>
+                    }
+                    else if (clubs.Count == 0)
+                    {
+                        <p class="empty-note">Crée d'abord un <a href="/clubs" style="color: var(--pitch); font-weight: 600;">club</a>.</p>
+                    }
+                    @if (formError is not null)
+                    {
+                        <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@formError</p>
+                    }
+                    <button class="btn btn-primary" type="submit">Créer</button>
+                </EditForm>
+            </CreateFab>
+        }
+    </div>
+    </details>
+    }
+
+    @if (pastSeasons.Count > 0)
+    {
+        <details class="collapsible" style="margin-top: 18px;">
+            <summary>
+                <span class="section-title" style="margin-bottom: 0;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--muted);"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path></svg>
+                    Saisons passées
+                    <span class="pill" style="margin-left: 4px;">@pastSeasons.Count</span>
+                </span>
+                <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+            </summary>
+            <div class="season-grid" style="margin-top: 14px;">
+                @foreach (var season in pastSeasons)
+                {
+                    @SeasonCard(season, false)
+                }
+            </div>
+        </details>
+    }
+
+    @if (dashboardStats is not null)
+    {
+        <details class="collapsible" style="margin-top: 18px;" open>
+            <summary>
+                <span class="section-title" style="margin-bottom: 0;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><path d="M3 3v18h18"></path><path d="M7 15l4-5 3 3 5-7"></path></svg>
+                    Statistiques
+                </span>
+                <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+            </summary>
+            <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 18px;">
+                <div class="dash-select-row">
+                    @if (statsEligiblePlayers.Count > 1)
+                    {
+                        <label class="dash-player-picker">
+                            <span class="dash-player-avatar">@PlayerInitials(statsEligiblePlayers.FirstOrDefault(p => p.Id == selectedStatsPlayerId))</span>
+                            <select @bind="selectedStatsPlayerId" @bind:after="OnStatsPlayerChanged">
+                                @foreach (var player in statsEligiblePlayers)
+                                {
+                                    <option value="@player.Id">@player.FirstName @player.LastName</option>
+                                }
+                            </select>
+                        </label>
+                    }
+                    else
+                    {
+                        <span class="dash-player-picker"><span class="dash-player-avatar">@PlayerInitials(statsEligiblePlayers.FirstOrDefault())</span>@statsEligiblePlayers.FirstOrDefault()?.FirstName</span>
+                    }
+                    <div class="seg">
+                        <button type="button" class="@(!statsAllSeasons ? "active" : "")" @onclick="() => SetStatsScope(false)">Cette saison</button>
+                        <button type="button" class="@(statsAllSeasons ? "active" : "")" @onclick="() => SetStatsScope(true)">Toutes les saisons</button>
+                    </div>
+                </div>
+
+                <div class="stat-grid">
+                    <div class="stat-tile">
+                        <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M16 2v4M8 2v4M3 10h18"></path></svg>
+                        <div class="num">@dashboardStats.MatchCount</div>
+                        <div class="label">Matchs</div>
+                    </div>
+                    <div class="stat-tile">
+                        <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                        <div class="num">@dashboardStats.Goals</div>
+                        <div class="label">Buts</div>
+                    </div>
+                    <div class="stat-tile">
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M3 3v18h18"></path><path d="M7 15l4-5 3 3 5-7"></path></svg>
+                        <div class="num">@dashboardStats.GoalsPerMatch</div>
+                        <div class="label">Buts / match</div>
+                    </div>
+                    <div class="stat-tile">
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg>
+                        <div class="num">@(dashboardStats.StarterRate)%</div>
+                        <div class="label">Titulaire</div>
+                    </div>
+                    <div class="stat-tile">
+                        <svg viewBox="0 0 24 24" class="icon"><path d="M4 21V9M4 9l4-4 4 2 4-3 4 2v12l-4-2-4 3-4-2-4 2z"></path></svg>
+                        <div class="num">@(dashboardStats.MainTeamNumber is { } mainTeam ? $"Éq. {mainTeam}" : "—")</div>
+                        <div class="label">@(dashboardStats.MainTeamNumber is not null ? $"{dashboardStats.MainTeamPercentage}% des matchs" : "Répartition équipe")</div>
+                    </div>
+                </div>
+
+                <div class="dash-grid-2">
+                    <div class="dash-card">
+                        <div class="dash-card-head">
+                            <div class="dash-card-title">Buts par match</div>
+                            <div class="dash-card-sub">@(dashboardStats.GoalsTrend.Count) derniers matchs</div>
+                        </div>
+                        <div class="dash-chart">
+                            @if (dashboardStats.GoalsTrend.Count == 0)
+                            {
+                                <p class="empty-note">Aucun match sur cette période.</p>
+                            }
+                            else
+                            {
+                                @((MarkupString)BuildTrendSvg(dashboardStats.GoalsTrend))
+                            }
+                        </div>
+                    </div>
+
+                    <div class="dash-card">
+                        <div class="dash-card-head">
+                            <div class="dash-card-title">Répartition par poste</div>
+                            <div class="dash-card-sub">@(dashboardStats.MatchCount) matchs</div>
+                        </div>
+                        <div class="dash-chart">
+                            @if (dashboardStats.PositionShares.Count == 0)
+                            {
+                                <p class="empty-note">Aucun match sur cette période.</p>
+                            }
+                            else
+                            {
+                                @((MarkupString)BuildPositionSvg(dashboardStats.PositionShares))
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                @if (dashboardStats.SeasonComparison.Count > 1)
+                {
+                    <div class="dash-card">
+                        <div class="dash-card-head">
+                            <div class="dash-card-title">Comparatif entre saisons</div>
+                            <div class="dash-card-sub">Buts / match</div>
+                        </div>
+                        <div class="dash-chart" style="max-width: 520px;">
+                            @((MarkupString)BuildSeasonComparisonSvg(dashboardStats.SeasonComparison))
+                        </div>
+                    </div>
+                }
+
+                <div class="section-title" style="font-size: 17px;">
+                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);" width="18" height="18"><path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4z"></path><path d="M7 6H4a2 2 0 0 0 2 5M17 6h3a2 2 0 0 1-2 5"></path></svg>
+                    Classement personnel
+                </div>
+                <div class="record-grid">
+                    <div class="record-card">
+                        <div class="record-icon"><svg class="icon" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path></svg></div>
+                        <div class="record-body">
+                            <div class="record-label">Meilleur évènement</div>
+                            @if (dashboardStats.BestEvent is { } bestEvent)
+                            {
+                                <div class="record-value">@(bestEvent.Name ?? bestEvent.City)</div>
+                                <div class="record-sub">@(bestEvent.Goals) but@(bestEvent.Goals > 1 ? "s" : "") en 1 journée</div>
+                            }
+                            else
+                            {
+                                <div class="record-sub">Aucun but marqué pour l'instant.</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="record-card">
+                        <div class="record-icon pitch"><svg class="icon" viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"></path></svg></div>
+                        <div class="record-body">
+                            <div class="record-label">Meilleure série</div>
+                            @if (dashboardStats.BestScoringStreak > 0)
+                            {
+                                <div class="record-value">@(dashboardStats.BestScoringStreak) match@(dashboardStats.BestScoringStreak > 1 ? "s" : "")</div>
+                                <div class="record-sub">avec au moins 1 but</div>
+                            }
+                            else
+                            {
+                                <div class="record-sub">Aucun but marqué pour l'instant.</div>
+                            }
+                        </div>
+                    </div>
+                    <div class="record-card">
+                        <div class="record-icon"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg></div>
+                        <div class="record-body">
+                            <div class="record-label">Record en un match</div>
+                            @if (dashboardStats.BestMatch is { } bestMatch)
+                            {
+                                <div class="record-value">@(bestMatch.Goals) but@(bestMatch.Goals > 1 ? "s" : "")</div>
+                                <div class="record-sub">vs @bestMatch.Opponent, @bestMatch.Date.ToString("d MMMM yyyy", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))</div>
+                            }
+                            else
+                            {
+                                <div class="record-sub">Aucun but marqué pour l'instant.</div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    }
+</div>
+
+<datalist id="relationship-presets">
+    @foreach (var preset in RelationshipDisplay.Presets)
+    {
+        <option value="@preset"></option>
+    }
+</datalist>
+
+<Modal @ref="shareModal" Label="Partager l'accès">
+    @if (sharePlayers.Count > 0)
+    {
+        <p class="empty-note" style="margin: -8px 0 16px;">à @ShareInviteService.PlayerNames(sharePlayers), en lecture seule.</p>
+    }
+    <ShareLinkPanel @ref="sharePanel" FixedRole="UserRole.Consultant" FixedPlayers="sharePlayers" OnClosed="() => shareModal?.Close()" />
+</Modal>
+
+@code {
+    private List<Season> seasons = [];
+    private List<Season> currentSeasons = [];
+    private List<Season> pastSeasons = [];
+    private List<Club> clubs = [];
+    private List<Player> players = [];
+    private SeasonForm form = new();
+    private CreateFab? fab;
+    private int totalGoals;
+    private bool canManage;
+    private bool isAdmin;
+    private string? formError;
+    private Modal? shareModal;
+    private ShareLinkPanel? sharePanel;
+    private List<Player> sharePlayers = [];
+
+    private void OpenShare(Season season)
+    {
+        if (!isAdmin || season.Player is null) return;
+        sharePlayers = [season.Player];
+        sharePanel?.Reset();
+        shareModal?.Open();
+    }
+    private bool needsSetup => players.Count == 0 || myClubIds.Count == 0;
+    private HashSet<int> myClubIds = [];
+    private HashSet<int> visiblePlayerIds = [];
+    private Dictionary<int, List<PlayerClub>> membershipsByPlayer = new();
+    private List<Player> statsEligiblePlayers = [];
+    private int selectedStatsPlayerId;
+    private bool statsAllSeasons;
+    private PlayerDashboardStats? dashboardStats;
+
+    private int currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = await CurrentUser.GetCurrentUserAsync();
+        currentUserId = user.Id;
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        isAdmin = user.Role == UserRole.Admin;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        players = await (await CurrentUser.GetVisiblePlayersAsync()).OrderBy(p => p.FirstName).ToListAsync();
+        visiblePlayerIds = players.Select(p => p.Id).ToHashSet();
+
+        seasons = await Db.Seasons.Include(s => s.Club).Include(s => s.Player)
+            .Where(s => visiblePlayerIds.Contains(s.PlayerId))
+            .OrderByDescending(s => s.Label)
+            .ToListAsync();
+        clubs = await Db.Clubs.OrderBy(c => c.Name).ToListAsync();
+
+        var assignedClubIds = await Db.PlayerClubs
+            .Where(m => visiblePlayerIds.Contains(m.PlayerId))
+            .Select(m => m.ClubId)
+            .Distinct()
+            .ToHashSetAsync();
+        var favoriteClubIds = await Db.Users
+            .Where(u => u.Id == currentUserId)
+            .SelectMany(u => u.FavoriteClubs)
+            .Select(c => c.Id)
+            .ToHashSetAsync();
+        myClubIds = assignedClubIds.Union(favoriteClubIds).ToHashSet();
+
+        var seasonPlayerIds = seasons.Select(s => s.PlayerId).Distinct().ToList();
+        var allMemberships = await Db.PlayerClubs.Include(m => m.Club)
+            .Where(m => seasonPlayerIds.Contains(m.PlayerId))
+            .OrderBy(m => m.StartDate)
+            .ToListAsync();
+        membershipsByPlayer = allMemberships.GroupBy(m => m.PlayerId).ToDictionary(g => g.Key, g => g.ToList());
+        totalGoals = await Db.Matches
+            .Where(m => visiblePlayerIds.Contains(m.Tournament!.Season!.PlayerId))
+            .SumAsync(m => m.PlayerGoals);
+
+        // Archivage automatique : une saison dont la date de fin est dépassée bascule en "passée".
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var toArchive = seasons.Where(s => !s.IsArchived && s.EndDate is not null && s.EndDate < today).ToList();
+        if (toArchive.Count > 0)
+        {
+            foreach (var s in toArchive) s.IsArchived = true;
+            await Db.SaveChangesAsync();
+        }
+
+        currentSeasons = seasons.Where(s => !s.IsArchived).ToList();
+        pastSeasons = seasons.Where(s => s.IsArchived).ToList();
+
+        await LoadStatsAsync();
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        var playerIdsWithMatches = await Db.Matches
+            .Where(m => visiblePlayerIds.Contains(m.Tournament!.Season!.PlayerId))
+            .Select(m => m.Tournament!.Season!.PlayerId)
+            .Distinct()
+            .ToListAsync();
+
+        statsEligiblePlayers = players.Where(p => playerIdsWithMatches.Contains(p.Id)).ToList();
+
+        if (statsEligiblePlayers.Count == 0)
+        {
+            dashboardStats = null;
+            return;
+        }
+
+        if (!statsEligiblePlayers.Any(p => p.Id == selectedStatsPlayerId))
+        {
+            selectedStatsPlayerId = statsEligiblePlayers[0].Id;
+        }
+
+        dashboardStats = await Stats.GetPlayerDashboardAsync(selectedStatsPlayerId, statsAllSeasons);
+    }
+
+    private async Task OnStatsPlayerChanged()
+    {
+        dashboardStats = await Stats.GetPlayerDashboardAsync(selectedStatsPlayerId, statsAllSeasons);
+    }
+
+    private async Task SetStatsScope(bool allSeasons)
+    {
+        statsAllSeasons = allSeasons;
+        dashboardStats = await Stats.GetPlayerDashboardAsync(selectedStatsPlayerId, statsAllSeasons);
+    }
+
+    private const double TrendChartWidth = 700, TrendChartHeight = 170, TrendPadTop = 20, TrendPadBottom = 34, TrendPadX = 24;
+
+    private static string Inv(double d) => d.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>Graphiques dessinés en SVG "à la main" (pas de librairie de charts) : chaque méthode construit
+    /// le balisage complet en chaîne, car Razor réserve la balise &lt;text&gt; à son propre usage et ne peut pas
+    /// la parser telle quelle dans un fichier .razor. Rendu via MarkupString, donc tout texte variable (nom
+    /// d'adversaire, poste, libellé de saison) est explicitement HTML-encodé pour rester sûr.</summary>
+    private static string Enc(string value) => System.Net.WebUtility.HtmlEncode(value);
+
+    private static string BuildTrendSvg(List<MatchTrendPoint> trend)
+    {
+        var maxGoals = Math.Max(1, trend.Max(t => t.Goals));
+        var usableWidth = TrendChartWidth - TrendPadX * 2;
+        var usableHeight = TrendChartHeight - TrendPadTop - TrendPadBottom;
+        var baseline = Inv(TrendChartHeight - TrendPadBottom);
+
+        var points = new List<(string X, string Y, string Label)>();
+        for (var i = 0; i < trend.Count; i++)
+        {
+            var x = trend.Count == 1 ? TrendPadX + usableWidth / 2 : TrendPadX + i * (usableWidth / (trend.Count - 1));
+            var y = TrendPadTop + usableHeight - trend[i].Goals / (double)maxGoals * usableHeight;
+            var label = trend[i].Opponent.Length > 10 ? trend[i].Opponent[..10] : trend[i].Opponent;
+            points.Add((Inv(x), Inv(y), label));
+        }
+
+        var polyline = string.Join(" ", points.Select(p => $"{p.X},{p.Y}"));
+        var area = $"{points[0].X},{baseline} " + polyline + $" {points[^1].X},{baseline}";
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg viewBox=\"0 0 {Inv(TrendChartWidth)} {Inv(TrendChartHeight)}\">");
+        sb.Append($"<line x1=\"0\" y1=\"{baseline}\" x2=\"{Inv(TrendChartWidth)}\" y2=\"{baseline}\" stroke=\"var(--line)\" stroke-width=\"1\"></line>");
+        sb.Append($"<polygon points=\"{area}\" fill=\"var(--gold)\" opacity=\"0.16\"></polygon>");
+        sb.Append($"<polyline points=\"{polyline}\" fill=\"none\" stroke=\"var(--pitch)\" stroke-width=\"3\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></polyline>");
+        foreach (var p in points)
+        {
+            sb.Append($"<circle cx=\"{p.X}\" cy=\"{p.Y}\" r=\"4.5\" fill=\"var(--gold-dark)\"></circle>");
+        }
+        foreach (var p in points)
+        {
+            sb.Append($"<text x=\"{p.X}\" y=\"158\" font-size=\"10.5\" fill=\"var(--muted)\" text-anchor=\"middle\">{Enc(p.Label)}</text>");
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private const double PositionBarMaxWidth = 480, PositionRowHeight = 34;
+
+    private static string BuildPositionSvg(List<PositionShare> shares)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg viewBox=\"0 0 {Inv(PositionBarMaxWidth)} {Inv(shares.Count * PositionRowHeight)}\">");
+        for (var i = 0; i < shares.Count; i++)
+        {
+            var share = shares[i];
+            var rowY = i * PositionRowHeight;
+            var barWidth = Inv(PositionBarMaxWidth * share.Percentage / 100.0);
+            sb.Append($"<text x=\"0\" y=\"{Inv(rowY + 12)}\" font-size=\"12\" fill=\"var(--ink)\" font-weight=\"700\">{Enc(share.Position)}</text>");
+            sb.Append($"<text x=\"{Inv(PositionBarMaxWidth - 4)}\" y=\"{Inv(rowY + 12)}\" font-size=\"12\" fill=\"var(--gold-dark)\" font-weight=\"700\" text-anchor=\"end\">{Inv(share.Percentage)}%</text>");
+            sb.Append($"<rect x=\"0\" y=\"{Inv(rowY + 18)}\" width=\"{Inv(PositionBarMaxWidth)}\" height=\"11\" rx=\"5.5\" fill=\"var(--paper)\" stroke=\"var(--line)\"></rect>");
+            sb.Append($"<rect x=\"0\" y=\"{Inv(rowY + 18)}\" width=\"{barWidth}\" height=\"11\" rx=\"5.5\" fill=\"var(--gold)\"></rect>");
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private const double SeasonBarWidth = 70, SeasonBarGap = 40, SeasonBarPadX = 30, SeasonChartBaseline = 122, SeasonBarMaxHeight = 100, SeasonChartHeight = 150;
+
+    private static string BuildSeasonComparisonSvg(List<SeasonGoalsPerMatch> seasons)
+    {
+        var chartWidth = SeasonBarPadX * 2 + seasons.Count * SeasonBarWidth + Math.Max(0, seasons.Count - 1) * SeasonBarGap;
+        var max = Math.Max(0.01, seasons.Max(s => s.GoalsPerMatch));
+
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg viewBox=\"0 0 {Inv(chartWidth)} {Inv(SeasonChartHeight)}\">");
+        sb.Append($"<line x1=\"0\" y1=\"{Inv(SeasonChartBaseline)}\" x2=\"{Inv(chartWidth)}\" y2=\"{Inv(SeasonChartBaseline)}\" stroke=\"var(--line)\" stroke-width=\"1\"></line>");
+        for (var i = 0; i < seasons.Count; i++)
+        {
+            var isLast = i == seasons.Count - 1;
+            var barHeight = Math.Max(4, seasons[i].GoalsPerMatch / max * SeasonBarMaxHeight);
+            var x = SeasonBarPadX + i * (SeasonBarWidth + SeasonBarGap);
+            var y = SeasonChartBaseline - barHeight;
+            var centerX = x + SeasonBarWidth / 2;
+            var fill = isLast ? "var(--gold)" : "var(--pitch)";
+            var labelColor = isLast ? "var(--gold-dark)" : "var(--pitch-dark)";
+            var valueLabel = seasons[i].GoalsPerMatch.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+            sb.Append($"<rect x=\"{Inv(x)}\" y=\"{Inv(y)}\" width=\"{Inv(SeasonBarWidth)}\" height=\"{Inv(barHeight)}\" rx=\"7\" fill=\"{fill}\"></rect>");
+            sb.Append($"<text x=\"{Inv(centerX)}\" y=\"{Inv(y - 8)}\" font-size=\"12\" fill=\"{labelColor}\" font-weight=\"700\" text-anchor=\"middle\">{Enc(valueLabel)}</text>");
+            sb.Append($"<text x=\"{Inv(centerX)}\" y=\"140\" font-size=\"11\" fill=\"var(--muted)\" text-anchor=\"middle\">{Enc(seasons[i].Label)}</text>");
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+
+    private async Task AddSeason()
+    {
+        if (!canManage) return;
+        formError = null;
+
+        if (string.IsNullOrWhiteSpace(form.Category) || form.ClubId == 0 || form.PlayerId == 0)
+        {
+            formError = "Joueur, catégorie et club sont obligatoires.";
+            return;
+        }
+        if (!visiblePlayerIds.Contains(form.PlayerId)) return;
+
+        if (!TryParseMonth(form.StartMonth, out var startParsed))
+        {
+            formError = "Indique un mois de début de saison.";
+            return;
+        }
+
+        var duplicate = await Db.Seasons.AnyAsync(s => s.PlayerId == form.PlayerId && s.ClubId == form.ClubId);
+        if (duplicate)
+        {
+            formError = "Ce joueur a déjà une saison enregistrée dans ce club.";
+            return;
+        }
+
+        var startDate = new DateOnly(startParsed.Year, startParsed.Month, 1);
+        DateOnly? endDate = null;
+        if (TryParseMonth(form.EndMonth, out var endParsed))
+        {
+            endDate = new DateOnly(endParsed.Year, endParsed.Month, DateTime.DaysInMonth(endParsed.Year, endParsed.Month));
+        }
+
+        var label = ComputeLabel(form.StartMonth, form.EndMonth) ?? startDate.Year.ToString();
+
+        Db.Seasons.Add(new Season
+        {
+            Label = label,
+            Category = form.Category.Trim(),
+            ClubId = form.ClubId,
+            PlayerId = form.PlayerId,
+            Sport = form.Sport,
+            StartDate = startDate,
+            EndDate = endDate
+        });
+        await Db.SaveChangesAsync();
+        await FavoriteClubAsync(form.ClubId);
+        await AssignPlayerClubMembershipAsync(form.PlayerId, form.ClubId, startDate);
+        form = new SeasonForm();
+        fab?.Close();
+        await LoadAsync();
+    }
+
+    /// <summary>Marque automatiquement un club comme "préféré" pour l'admin courant dès qu'il l'assigne
+    /// à une saison, pour éviter l'étape manuelle sur la page Clubs.</summary>
+    private async Task FavoriteClubAsync(int clubId)
+    {
+        var user = await CurrentUser.GetCurrentUserAsync();
+        var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == user.Id);
+        if (entity.FavoriteClubs.Any(c => c.Id == clubId)) return;
+
+        var club = await Db.Clubs.FindAsync(clubId);
+        if (club is null) return;
+
+        entity.FavoriteClubs.Add(club);
+        await Db.SaveChangesAsync();
+    }
+
+    /// <summary>Rattache automatiquement le joueur au club de la saison qu'on vient de créer, pour éviter
+    /// d'aller ensuite le faire manuellement sur la fiche joueur. Un joueur peut être inscrit dans plusieurs
+    /// clubs en même temps (ex: foot + futsal), donc on ajoute cette appartenance sans clore les autres clubs
+    /// actifs du joueur ; si une appartenance active existe déjà pour ce club précis, on ne duplique rien.</summary>
+    private async Task AssignPlayerClubMembershipAsync(int playerId, int clubId, DateOnly startDate)
+    {
+        var hasActiveMembership = await Db.PlayerClubs
+            .AnyAsync(m => m.PlayerId == playerId && m.ClubId == clubId && m.EndDate == null);
+        if (hasActiveMembership) return;
+
+        Db.PlayerClubs.Add(new PlayerClub { PlayerId = playerId, ClubId = clubId, StartDate = startDate });
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task ToggleArchive(Season season)
+    {
+        if (!canManage) return;
+        var question = season.IsArchived
+            ? $"Réactiver la saison {season.Label} de {season.Player?.FirstName} {season.Player?.LastName} ?"
+            : $"Terminer la saison {season.Label} de {season.Player?.FirstName} {season.Player?.LastName} au {season.Club?.Name} aujourd'hui ? Le joueur pourra ensuite être rattaché à un autre club sur une nouvelle saison.";
+        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+
+        var entity = await Db.Seasons.FindAsync(season.Id);
+        if (entity is null) return;
+
+        entity.IsArchived = !entity.IsArchived;
+        if (entity.IsArchived)
+        {
+            var today = DateOnly.FromDateTime(DateTime.Today);
+            if (entity.EndDate is null || entity.EndDate > today)
+            {
+                entity.EndDate = today;
+            }
+        }
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private void GoToSeason(int id) => Navigation.NavigateTo($"/seasons/{id}");
+
+    private static bool TryParseMonth(string? value, out DateTime date) => SeasonLabelHelper.TryParseMonth(value, out date);
+
+    private static string? ComputeLabel(string? startMonth, string? endMonth) => SeasonLabelHelper.ComputeLabel(startMonth, endMonth);
+
+    private List<Club> SeasonTimeline(Season season)
+    {
+        var memberships = membershipsByPlayer.TryGetValue(season.PlayerId, out var list) ? list : [];
+        return ClubTimelineHelper.SeasonTimeline(memberships, season.StartDate, season.EndDate, season.Club);
+    }
+
+    private static string ClubAcronym(Club club)
+    {
+        if (!string.IsNullOrWhiteSpace(club.Acronym)) return club.Acronym.ToUpper();
+        var parts = club.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? string.Concat(parts.Select(p => p[0])).ToUpper()[..Math.Min(3, parts.Length)]
+            : club.Name[..Math.Min(2, club.Name.Length)].ToUpper();
+    }
+
+    private static string PlayerInitials(Player? player)
+    {
+        if (player is null) return "?";
+        var a = player.FirstName.Length > 0 ? player.FirstName[0].ToString() : "";
+        var b = player.LastName.Length > 0 ? player.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    private RenderFragment SeasonCard(Season season, bool featured) => @<div class="season-card @(featured ? "featured" : "")" @onclick="() => GoToSeason(season.Id)">
+        @{ var currentClub = SeasonTimeline(season).LastOrDefault(); }
+        <div class="card-crest">
+            @if (featured)
+            {
+                <svg viewBox="0 0 24 24" class="mini-ball" fill="#fff"><circle cx="12" cy="12" r="10.5"></circle><path d="M12 6l3.6 2.6-1.4 4.2h-4.4l-1.4-4.2z" fill="#12201a"></path></svg>
+            }
+            <div class="card-badge">@PlayerInitials(season.Player)</div>
+            @if (currentClub is not null)
+            {
+                <span class="club-acronym-caption">@ClubAcronym(currentClub)</span>
+            }
+        </div>
+        <div class="card-body">
+            <div class="card-title-row">
+                <div class="card-title">@season.Label</div>
+                <span class="pill">@season.Category</span>
+                @if (SeasonRenewalHelper.NeedsRenewal(season, DateOnly.FromDateTime(DateTime.Today)))
+                {
+                    <span class="pill pill-gold" title="Saison bientôt terminée : à prolonger">Renouveler</span>
+                }
+            </div>
+            <div class="card-line">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span>@season.Player?.FirstName @season.Player?.LastName</span>
+            </div>
+            <div class="card-line">
+                @if (currentClub is not null)
+                {
+                    @if (!string.IsNullOrEmpty(currentClub.LogoPath))
+                    {
+                        <img src="@currentClub.LogoPath" alt="" class="club-logo-mini" />
+                    }
+                    <span>@currentClub.Name</span>
+                }
+                else
+                {
+                    <span class="muted">Club inconnu</span>
+                }
+            </div>
+            @if (canManage)
+            {
+                <div class="card-actions-row">
+                    @if (isAdmin)
+                    {
+                        <button class="btn-season-share btn btn-secondary" @onclick:stopPropagation="true" @onclick="() => OpenShare(season)" title="Partager l'accès à ce joueur">
+                            <svg viewBox="0 0 24 24" class="icon"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"></line><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"></line></svg>
+                            <span>Partager</span>
+                        </button>
+                    }
+                    <button class="btn-season-end @(season.IsArchived ? "is-archived" : "")" @onclick:stopPropagation="true" @onclick="() => ToggleArchive(season)" title="@(season.IsArchived ? "Réactiver" : "Terminer la saison (changement de club)")">
+                        @if (season.IsArchived)
+                        {
+                            <svg viewBox="0 0 24 24" class="icon"><path d="M3 3v5h5"></path><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"></path></svg>
+                            <span>Réactiver</span>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="5" rx="1"></rect><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"></path><path d="M10 13h4"></path></svg>
+                            <span>Clôturer</span>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+    </div>;
+
+    private class SeasonForm
+    {
+        public int PlayerId { get; set; }
+        public string Category { get; set; } = "";
+        public int ClubId { get; set; }
+        public Sport Sport { get; set; } = Sport.Football;
+        public string StartMonth { get; set; } = "";
+        public string EndMonth { get; set; } = "";
+    }
+}

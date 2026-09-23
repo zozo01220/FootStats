@@ -1,0 +1,276 @@
+@* Générateur de lien de partage : rôle + enfant(s) déjà fixés (carte saison) ou à choisir (page Utilisateurs).
+   Une fois le lien généré, propose l'envoi adapté à l'appareil : email via Brevo sur PC, partage WhatsApp sur mobile. *@
+@inject ShareInviteService ShareInviteSvc
+@inject CurrentUserService CurrentUser
+@inject IJSRuntime JS
+
+<div class="share-link-panel">
+    @if (step == Step.Form)
+    {
+        @if (FixedPlayers is null)
+        {
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Rôle</label>
+                <select @bind="role">
+                    <option value="@UserRole.User">Utilisateur (peut gérer joueurs, clubs, saisons)</option>
+                    <option value="@UserRole.Consultant">Consultant (lecture seule)</option>
+                </select>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Enfants concernés</label>
+                <div class="player-picker">
+                    @if (AvailablePlayers is null || AvailablePlayers.Count == 0)
+                    {
+                        <div class="player-picker-empty">Aucun enfant créé pour le moment.</div>
+                    }
+                    else
+                    {
+                        @foreach (var player in AvailablePlayers)
+                        {
+                            var isChecked = selectedPlayerIds.Contains(player.Id);
+                            <label class="player-picker-row @(isChecked ? "checked" : "")">
+                                <input type="checkbox" checked="@isChecked" @onchange="e => ToggleSelection(player.Id, (bool)e.Value!)" />
+                                <span>@player.FirstName @player.LastName</span>
+                            </label>
+                        }
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+                <span class="pill">@(role == UserRole.Consultant ? "Consultation seule" : "Gestion")</span>
+                <span class="pill">@ShareInviteService.PlayerNames(FixedPlayers)</span>
+            </div>
+        }
+
+        <div class="field" style="margin-bottom: 16px;">
+            <label>Lien de parenté (optionnel)</label>
+            <input @bind="relationship" list="relationship-presets" placeholder="Mamy, Tonton, Ami(e)..." />
+        </div>
+
+        @if (formError is not null)
+        {
+            <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@formError</p>
+        }
+
+        <button class="btn btn-primary" type="button" @onclick="Generate" disabled="@generating">
+            @(generating ? "Génération..." : "Générer le lien")
+        </button>
+    }
+    else
+    {
+        <div style="display: flex; align-items: center; gap: 8px; background: var(--success-bg, #EAF4EC); border: 1px solid var(--success-border, #CBE5D1); border-radius: 10px; padding: 9px 12px; margin-bottom: 10px;">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#2F7A4A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+            <span style="font-size: 12.5px; font-weight: 700; color: #1F5C39;">Lien généré pour @scopePlayerNames</span>
+        </div>
+        <div style="background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 11.5px; color: var(--muted); word-break: break-all; margin-bottom: 16px;">
+            @link
+        </div>
+
+        @if (sendSuccess)
+        {
+            <div style="display: flex; align-items: center; gap: 8px; background: #EAF4EC; border: 1px solid #CBE5D1; border-radius: 10px; padding: 9px 12px;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#2F7A4A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                <span style="font-size: 12.5px; font-weight: 700; color: #1F5C39;">@sendSuccessMessage</span>
+            </div>
+        }
+        else if (isMobile is null)
+        {
+            <p class="empty-note">Préparation...</p>
+        }
+        else if (isMobile == false)
+        {
+            <div class="field" style="margin-bottom: 12px;">
+                <label>Adresse email du proche</label>
+                <input type="email" @bind="recipientEmail" placeholder="mamy.dupont@exemple.com" />
+            </div>
+            @if (sendError is not null)
+            {
+                <div style="display: flex; align-items: center; gap: 8px; background: #FBE9E4; border: 1px solid #F0C9BE; border-radius: 10px; padding: 9px 12px; margin-bottom: 12px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#B3432B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    <span style="font-size: 12.5px; font-weight: 700; color: #B3432B;">@sendError</span>
+                </div>
+            }
+            <button class="btn btn-primary" type="button" @onclick="SendEmail" disabled="@sending">
+                @(sending ? "Envoi..." : "Envoyer l'invitation par email")
+            </button>
+        }
+        else
+        {
+            <button class="btn btn-primary" type="button" @onclick="OpenWhatsApp">
+                Partager via WhatsApp
+            </button>
+            <p class="empty-note" style="margin-top: 8px;">Vous choisirez le contact dans WhatsApp : le message et le lien sont déjà prêts.</p>
+        }
+
+        @if (!sendSuccess)
+        {
+            <div style="text-align: center; margin-top: 14px;">
+                <a href="javascript:void(0)" @onclick="CopyLink" style="color: var(--muted); font-size: 12.5px; font-weight: 600; text-decoration: underline;">
+                    @(copied ? "Lien copié !" : "Copier le lien à la place")
+                </a>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>Rôle imposé (bouton "Partager" d'une carte saison) ; null = choisi par l'Admin (page Utilisateurs).</summary>
+    [Parameter] public UserRole? FixedRole { get; set; }
+    /// <summary>Enfant(s) déjà fixé(s) (bouton "Partager" d'une carte saison) ; null = à choisir via <see cref="AvailablePlayers"/>.</summary>
+    [Parameter] public List<Player>? FixedPlayers { get; set; }
+    [Parameter] public List<Player>? AvailablePlayers { get; set; }
+    [Parameter] public EventCallback OnGenerated { get; set; }
+    /// <summary>Invoqué ~1.5s après un envoi réussi (email ou WhatsApp), pour laisser la page hôte refermer sa
+    /// modale une fois la confirmation lue.</summary>
+    [Parameter] public EventCallback OnClosed { get; set; }
+
+    private enum Step { Form, Generated }
+    private Step step = Step.Form;
+
+    private UserRole role = UserRole.Consultant;
+    private HashSet<int> selectedPlayerIds = [];
+    private string relationship = "";
+    private string? formError;
+    private bool generating;
+
+    private int inviteId;
+    private string rawToken = "";
+    private string link = "";
+    private string scopePlayerNames = "";
+    private bool? isMobile;
+    private bool deviceChecked;
+
+    private string recipientEmail = "";
+    private bool sending;
+    private string? sendError;
+    private bool sendSuccess;
+    private string sendSuccessMessage = "";
+    private bool copied;
+
+    private const int AutoCloseDelayMs = 1500;
+
+    protected override void OnParametersSet()
+    {
+        if (FixedRole.HasValue) role = FixedRole.Value;
+    }
+
+    /// <summary>Réinitialise le panneau avant une nouvelle ouverture (appelé par la page hôte) : sans ça, un
+    /// second partage réutiliserait l'état "lien généré" du précédent.</summary>
+    public void Reset()
+    {
+        step = Step.Form;
+        role = FixedRole ?? UserRole.Consultant;
+        selectedPlayerIds = [];
+        relationship = "";
+        formError = null;
+        generating = false;
+        isMobile = null;
+        deviceChecked = false;
+        recipientEmail = "";
+        sending = false;
+        sendError = null;
+        sendSuccess = false;
+        sendSuccessMessage = "";
+        copied = false;
+    }
+
+    private void ToggleSelection(int playerId, bool isChecked)
+    {
+        if (isChecked) selectedPlayerIds.Add(playerId);
+        else selectedPlayerIds.Remove(playerId);
+    }
+
+    private async Task Generate()
+    {
+        formError = null;
+        var playerIds = FixedPlayers?.Select(p => p.Id).ToList() ?? selectedPlayerIds.ToList();
+        if (playerIds.Count == 0)
+        {
+            formError = "Sélectionnez au moins un enfant.";
+            return;
+        }
+
+        generating = true;
+        var currentUser = await CurrentUser.GetCurrentUserAsync();
+        var (invite, token) = await ShareInviteSvc.CreateAsync(currentUser.Id, role, playerIds, relationship);
+        inviteId = invite.Id;
+        rawToken = token;
+        link = ShareInviteSvc.BuildLink(token);
+        scopePlayerNames = ShareInviteService.PlayerNames(FixedPlayers ?? (AvailablePlayers ?? []).Where(p => selectedPlayerIds.Contains(p.Id)));
+        generating = false;
+        step = Step.Generated;
+        await OnGenerated.InvokeAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (step == Step.Generated && !deviceChecked)
+        {
+            deviceChecked = true;
+            isMobile = await JS.InvokeAsync<bool>("footstats.isMobileDevice");
+            StateHasChanged();
+        }
+    }
+
+    private async Task SendEmail()
+    {
+        sendError = null;
+        sendSuccess = false;
+        if (string.IsNullOrWhiteSpace(recipientEmail))
+        {
+            sendError = "Une adresse email est requise.";
+            return;
+        }
+
+        sending = true;
+        try
+        {
+            await ShareInviteSvc.SendEmailAsync(inviteId, recipientEmail.Trim(), rawToken);
+            sendSuccess = true;
+            sendSuccessMessage = $"Invitation envoyée à {recipientEmail.Trim()}.";
+            sending = false;
+            StateHasChanged();
+            await CloseAfterDelayAsync();
+            return;
+        }
+        catch (Exception ex)
+        {
+            sendError = $"Erreur durant l'envoi de l'invitation à {recipientEmail.Trim()} : {ex.Message}";
+        }
+        sending = false;
+    }
+
+    private async Task OpenWhatsApp()
+    {
+        var currentUser = await CurrentUser.GetCurrentUserAsync();
+        var adminName = $"{currentUser.FirstName} {currentUser.LastName}";
+        var url = ShareInviteSvc.BuildWhatsAppShareUrl(rawToken, adminName, scopePlayerNames);
+        await JS.InvokeVoidAsync("footstats.openInNewTab", url);
+
+        sendSuccess = true;
+        sendSuccessMessage = "Partagé via WhatsApp.";
+        StateHasChanged();
+        await CloseAfterDelayAsync();
+    }
+
+    /// <summary>Laisse la confirmation visible un court instant avant de signaler à la page hôte de refermer sa
+    /// modale, sur PC comme sur mobile.</summary>
+    private async Task CloseAfterDelayAsync()
+    {
+        await Task.Delay(AutoCloseDelayMs);
+        await OnClosed.InvokeAsync();
+    }
+
+    private async Task CopyLink()
+    {
+        var success = await JS.InvokeAsync<bool>("footstats.copyText", link);
+        if (success)
+        {
+            copied = true;
+            StateHasChanged();
+        }
+    }
+}

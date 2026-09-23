@@ -1,0 +1,52 @@
+@* Sélecteur de fichier : glisser/déposer sur PC, bouton "Parcourir" partout. Ne montre jamais le chemin du fichier. *@
+@inject IJSRuntime JS
+
+<div class="file-picker" @ref="_dropZoneRef">
+    <label class="file-picker-zone @(_hasFile ? "has-file" : "")">
+        <InputFile class="file-picker-input" OnChange="HandleChange" accept="@Accept" />
+        <span class="file-picker-icon">
+            @if (_hasFile)
+            {
+                <svg viewBox="0 0 24 24" class="icon"><path d="M20 6L9 17l-5-5"></path></svg>
+            }
+            else
+            {
+                <svg viewBox="0 0 24 24" class="icon"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 20h16"></path></svg>
+            }
+        </span>
+        <span class="file-picker-copy">
+            <span class="file-picker-title">@(_hasFile ? "Fichier sélectionné" : Title)</span>
+            <span class="file-picker-hint">@Hint</span>
+        </span>
+        <span class="btn file-picker-browse">Parcourir</span>
+    </label>
+</div>
+
+@code {
+    [Parameter] public string Accept { get; set; } = "image/*";
+    [Parameter] public string Title { get; set; } = "Glissez une image ici";
+    [Parameter] public string Hint { get; set; } = "PNG, JPG...";
+    [Parameter] public EventCallback<IBrowserFile> OnFileSelected { get; set; }
+
+    private ElementReference _dropZoneRef;
+    private bool _hasFile;
+    private bool _jsBound;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_jsBound)
+        {
+            _jsBound = true;
+            await JS.InvokeVoidAsync("footstats.bindDropZone", _dropZoneRef);
+        }
+    }
+
+    private async Task HandleChange(InputFileChangeEventArgs e)
+    {
+        _hasFile = e.FileCount > 0;
+        if (_hasFile)
+        {
+            await OnFileSelected.InvokeAsync(e.File);
+        }
+    }
+}

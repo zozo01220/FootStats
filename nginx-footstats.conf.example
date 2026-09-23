@@ -1,0 +1,27 @@
+# Exemple de config nginx à placer dans /etc/nginx/sites-available/footstats
+# puis: ln -s /etc/nginx/sites-available/footstats /etc/nginx/sites-enabled/
+# Adapter le nom de domaine (ex: stats.familleprieur01.duckdns.org)
+
+server {
+    listen 80;
+    server_name stats.familleprieur01.duckdns.org;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+
+        # nécessaire pour le SignalR de Blazor Server
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+# Ensuite, pour activer HTTPS automatiquement :
+#   sudo apt install certbot python3-certbot-nginx
+#   sudo certbot --nginx -d stats.familleprieur01.duckdns.org

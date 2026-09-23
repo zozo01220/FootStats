@@ -1,0 +1,44 @@
+@* Modale générique sans déclencheur propre : ouverte via @ref depuis la page (bouton "Modifier" par ex.). *@
+
+@if (_isOpen)
+{
+    <div class="modal-backdrop" @onclick="Close">
+        <div class="modal-panel" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <div class="modal-header-title">
+                    <span class="section-title">@Label</span>
+                    @if (Subtitle is not null)
+                    {
+                        @Subtitle
+                    }
+                </div>
+                <button class="icon-btn" type="button" @onclick="Close" aria-label="Fermer">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                @ChildContent
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Label { get; set; } = "Modifier";
+    [Parameter] public RenderFragment? Subtitle { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool _isOpen;
+
+    public void Open()
+    {
+        _isOpen = true;
+        StateHasChanged();
+    }
+
+    public void Close()
+    {
+        _isOpen = false;
+        StateHasChanged();
+    }
+}

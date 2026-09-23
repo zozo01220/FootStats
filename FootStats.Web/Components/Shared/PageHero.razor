@@ -1,0 +1,43 @@
+@* En-tête de page "wahou" : eyebrow doré, grand titre Bebas Neue, ballon en filigrane, stats optionnelles. *@
+
+<div class="page-hero @(Accent is null ? "" : $"page-hero-{Accent}")">
+    <svg viewBox="0 0 200 200" class="page-hero-watermark" aria-hidden="true">
+        <circle cx="100" cy="100" r="92" fill="none" stroke="currentColor" stroke-width="3"></circle>
+        <polygon points="100,58 118,72 111,94 89,94 82,72" fill="currentColor"></polygon>
+        <g stroke="currentColor" stroke-width="3" fill="none">
+            <path d="M100 58 L100 26"></path><path d="M118 72 L146 54"></path>
+            <path d="M111 94 L140 108"></path><path d="M89 94 L60 108"></path><path d="M82 72 L54 54"></path>
+        </g>
+    </svg>
+
+    <div class="page-hero-row">
+        <div>
+            <div class="page-hero-eyebrow">
+                <span class="dot"></span>
+                <span>@Eyebrow</span>
+            </div>
+            <h1 class="page-hero-title">@Title</h1>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <div class="page-hero-subtitle">@Subtitle</div>
+            }
+        </div>
+
+        @if (Stats is not null)
+        {
+            <div class="page-hero-stats">
+                @Stats
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Eyebrow { get; set; } = "";
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Subtitle { get; set; }
+    [Parameter] public RenderFragment? Stats { get; set; }
+
+    /// <summary>Palette du bandeau : null = vert/or "terrain" (défaut), "system" = bleu ardoise (pages d'administration des comptes).</summary>
+    [Parameter] public string? Accent { get; set; }
+}

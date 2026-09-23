@@ -1,0 +1,425 @@
+@page "/players/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject NavigationManager Navigation
+@inject UploadsPathProvider Uploads
+@inject IJSRuntime JS
+@inject CurrentUserService CurrentUser
+
+<PageTitle>@player?.FirstName @player?.LastName - FootStats</PageTitle>
+
+@if (player is null)
+{
+    <div class="container"><p class="empty-note">@(notFound ? "Joueur introuvable." : "Chargement...")</p></div>
+}
+else
+{
+    <div class="container">
+        <a href="/players" class="back-link">
+            <svg viewBox="0 0 24 24" class="icon" style="width:14px;height:14px;"><path d="M15 6l-6 6 6 6"></path></svg>
+            Tous les joueurs
+        </a>
+
+        <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+            @if (!string.IsNullOrEmpty(player.PhotoPath))
+            {
+                <img class="player-avatar-lg" src="@player.PhotoPath" alt="@player.FirstName @player.LastName" />
+            }
+            else
+            {
+                <div class="player-avatar-lg-placeholder">@Initials(player)</div>
+            }
+            <div style="flex-grow: 1;">
+                <h1 class="page-title" style="display: flex; align-items: center; gap: 10px;">
+                    @player.FirstName @player.LastName
+                    @if (player.IsCaptain)
+                    {
+                        <svg viewBox="0 0 24 24" class="icon" style="width: 22px; height: 22px; color: var(--gold-dark);" fill="currentColor" stroke="none" title="Capitaine" aria-label="Capitaine"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
+                    }
+                </h1>
+                <div style="font-size: 15px; color: var(--muted);">@Age(player.BirthDate) ans &middot; né(e) le @player.BirthDate.ToString("dd.MM.yyyy")</div>
+                <div class="meta" style="display:flex; gap:8px; margin-top: 8px;">
+                    <span class="pill">@player.Position</span>
+                    @if (player.PreferredNumber is not null)
+                    {
+                        <span class="pill pill-gold">N° @player.PreferredNumber</span>
+                    }
+                </div>
+            </div>
+            @if (canManage)
+            {
+                <button class="icon-action" @onclick="OpenEdit" aria-label="Modifier" title="Modifier">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                </button>
+            }
+        </div>
+
+        <div class="card">
+            <div class="section-title" style="padding: 22px 24px 4px;">
+                <svg viewBox="0 0 24 24" class="icon" style="color: var(--pitch);"><path d="M4 21V9M4 9l4-4 4 2 4-3 4 2v12l-4-2-4 3-4-2-4 2z"></path></svg>
+                Historique des clubs
+            </div>
+            <div class="score-table-wrap" style="padding: 8px 4px 6px;">
+                <div class="score-row head" style="grid-template-columns: 1.2fr 1fr 1fr 34px;">
+                    <span>Club</span><span>Début</span><span>Fin</span><span></span>
+                </div>
+                @foreach (var m in memberships)
+                {
+                    <div class="score-row" style="grid-template-columns: 1.2fr 1fr 1fr 34px;">
+                        <span class="row-title" style="display: flex; align-items: center; gap: 8px;">
+                            @if (!string.IsNullOrEmpty(m.Club?.LogoPath))
+                            {
+                                <img src="@m.Club.LogoPath" alt="" class="club-logo-mini" />
+                            }
+                            <span>@m.Club?.Name</span>
+                        </span>
+                        <span class="muted" data-label="Début">@m.StartDate.ToString("dd.MM.yyyy")</span>
+                        <span class="muted" data-label="Fin">@(m.EndDate is null ? "En cours" : m.EndDate.Value.ToString("dd.MM.yyyy"))</span>
+                        @if (canManage)
+                        {
+                            <button class="icon-action delete" @onclick="() => DeleteMembership(m.Id)" aria-label="Supprimer" title="Supprimer">
+                                <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                            </button>
+                        }
+                    </div>
+                }
+                @if (memberships.Count == 0)
+                {
+                    <p class="empty-note">Aucun club enregistré.</p>
+                }
+            </div>
+            @if (canManage)
+            {
+                <p class="empty-note" style="padding: 0 16px 16px;">Pour changer de club, utilise le champ "Clubs actuels" dans <a href="javascript:void(0)" @onclick="OpenEdit" style="color: var(--pitch); font-weight: 600;">Modifier le joueur</a>. Un club est aussi ajouté automatiquement dès qu'une saison y est créée pour ce joueur.</p>
+            }
+        </div>
+
+        <div class="card">
+            <div class="section-title" style="padding: 22px 24px 4px;">
+                <svg viewBox="0 0 24 24" class="icon" style="color: var(--pitch);"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                Saisons
+            </div>
+            <div class="score-table-wrap" style="padding: 8px 4px 6px;">
+                @foreach (var s in seasons)
+                {
+                    <div class="score-row row-clickable" style="grid-template-columns: 1fr 1fr auto;" @onclick="() => GoToSeason(s.Id)">
+                        <span class="row-title">@s.Label</span>
+                        <span class="muted" data-label="Club" style="display: flex; align-items: center; gap: 6px;">
+                            @if (!string.IsNullOrEmpty(s.Club?.LogoPath))
+                            {
+                                <img src="@s.Club.LogoPath" alt="" class="club-logo-mini" />
+                            }
+                            <span>@s.Club?.Name &middot; @s.Category</span>
+                        </span>
+                        <span></span>
+                    </div>
+                }
+                @if (seasons.Count == 0)
+                {
+                    <p class="empty-note">Aucune saison pour ce joueur.</p>
+                }
+            </div>
+        </div>
+    </div>
+
+    <Modal @ref="editModal" Label="Modifier le joueur">
+        <EditForm Model="editForm" OnValidSubmit="SaveEdit">
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Prénom</label>
+                <input @bind="editForm.FirstName" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Nom</label>
+                <input @bind="editForm.LastName" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Date de naissance</label>
+                <input type="date" @bind="editForm.BirthDate" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Poste</label>
+                <select @bind="editForm.Position">
+                    <option>Gardien</option>
+                    <option>Défenseur</option>
+                    <option>Milieu</option>
+                    <option>Attaquant</option>
+                </select>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Numéro préféré</label>
+                <input type="number" min="1" max="99" @bind="editForm.PreferredNumber" />
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                    <span class="toggle-switch">
+                        <input type="checkbox" @bind="editForm.IsCaptain" />
+                        <span class="toggle-slider"></span>
+                    </span>
+                    Capitaine
+                </label>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Clubs actuels</label>
+                @ClubPicker(editForm.CurrentClubIds)
+                <p class="empty-note" style="padding: 6px 0 0;">Un joueur peut être inscrit dans plusieurs clubs en même temps (ex: foot + futsal). Décocher un club clôt son appartenance aujourd'hui. Seuls les clubs préférés apparaissent ici ; un club est aussi ajouté automatiquement dès qu'une saison y est créée pour ce joueur.</p>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Photo</label>
+                @if (!removePhoto && !string.IsNullOrEmpty(player.PhotoPath))
+                {
+                    <div class="current-photo">
+                        <img class="preview-thumb" src="@player.PhotoPath" alt="Photo actuelle" />
+                        <span>Photo actuelle</span>
+                        <button type="button" class="btn-danger-outline" @onclick="() => removePhoto = true">Enlever</button>
+                    </div>
+                }
+                @if (removePhoto)
+                {
+                    <p class="empty-note" style="padding: 0 0 8px;">La photo sera supprimée à l'enregistrement.</p>
+                }
+                <FilePicker Accept="image/*" Title="Glissez une photo ici" Hint="PNG, JPG..." OnFileSelected="OnEditPhotoSelected" />
+            </div>
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </EditForm>
+    </Modal>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+
+    private Player? player;
+    private List<Club> clubs = [];
+    private List<Club> preferredClubs = [];
+    private List<Club> editClubOptions = [];
+    private List<PlayerClub> memberships = [];
+    private List<Season> seasons = [];
+    private PlayerEditForm editForm = new();
+    private Modal? editModal;
+    private IBrowserFile? editPhoto;
+    private bool removePhoto;
+    private bool canManage;
+    private bool notFound;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!await CurrentUser.CanSeePlayerAsync(Id))
+        {
+            notFound = true;
+            return;
+        }
+
+        canManage = await CurrentUser.CanManageFamilyDataAsync();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        player = await Db.Players.FindAsync(Id);
+        clubs = await Db.Clubs.OrderBy(c => c.Name).ToListAsync();
+        memberships = await Db.PlayerClubs.Include(m => m.Club)
+            .Where(m => m.PlayerId == Id)
+            .OrderByDescending(m => m.StartDate)
+            .ToListAsync();
+        seasons = await Db.Seasons.Include(s => s.Club)
+            .Where(s => s.PlayerId == Id)
+            .OrderByDescending(s => s.Label)
+            .ToListAsync();
+
+        // "Clubs préférés" : mêmes règles que la page Clubs (clubs déjà assignés à un joueur visible, ou
+        // marqués préférés à la main par l'admin courant), pour ne pas noyer le sélecteur sous tous les clubs.
+        var currentUserId = (await CurrentUser.GetCurrentUserAsync()).Id;
+        var visiblePlayerIds = await (await CurrentUser.GetVisiblePlayersAsync()).Select(p => p.Id).ToListAsync();
+        var assignedClubIds = await Db.PlayerClubs
+            .Where(m => visiblePlayerIds.Contains(m.PlayerId))
+            .Select(m => m.ClubId)
+            .Distinct()
+            .ToListAsync();
+        var favoriteClubIds = await Db.Users
+            .Where(u => u.Id == currentUserId)
+            .SelectMany(u => u.FavoriteClubs)
+            .Select(c => c.Id)
+            .ToListAsync();
+        var preferredClubIds = assignedClubIds.Union(favoriteClubIds).ToHashSet();
+        preferredClubs = clubs.Where(c => preferredClubIds.Contains(c.Id)).ToList();
+    }
+
+    private async Task DeleteMembership(int membershipId)
+    {
+        if (!canManage) return;
+        var clubName = memberships.FirstOrDefault(m => m.Id == membershipId)?.Club?.Name ?? "ce club";
+        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {clubName} ?")) return;
+
+        var membership = await Db.PlayerClubs.FindAsync(membershipId);
+        if (membership is null) return;
+        Db.PlayerClubs.Remove(membership);
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+
+    private void GoToSeason(int id) => Navigation.NavigateTo($"/seasons/{id}");
+
+    private void OpenEdit()
+    {
+        if (!canManage || player is null) return;
+        var activeClubIds = memberships.Where(m => m.EndDate is null).Select(m => m.ClubId).ToHashSet();
+
+        // Le club actif d'un joueur n'est pas toujours dans les préférés (ex: club retiré des préférés
+        // entre-temps) : on l'ajoute quand même à la liste pour ne jamais perdre la main dessus.
+        editClubOptions = preferredClubs
+            .Concat(clubs.Where(c => activeClubIds.Contains(c.Id)))
+            .DistinctBy(c => c.Id)
+            .OrderBy(c => c.Name)
+            .ToList();
+
+        editForm = new PlayerEditForm
+        {
+            FirstName = player.FirstName,
+            LastName = player.LastName,
+            BirthDate = player.BirthDate.ToDateTime(TimeOnly.MinValue),
+            Position = player.Position,
+            PreferredNumber = player.PreferredNumber,
+            IsCaptain = player.IsCaptain,
+            CurrentClubIds = activeClubIds
+        };
+        editPhoto = null;
+        removePhoto = false;
+        editModal?.Open();
+    }
+
+    private static void ToggleSelection(HashSet<int> set, int id, bool isChecked)
+    {
+        if (isChecked) set.Add(id);
+        else set.Remove(id);
+    }
+
+    private void OnEditPhotoSelected(IBrowserFile file)
+    {
+        editPhoto = file;
+        removePhoto = false;
+    }
+
+    private async Task SaveEdit()
+    {
+        if (!canManage || string.IsNullOrWhiteSpace(editForm.FirstName) || string.IsNullOrWhiteSpace(editForm.LastName)) return;
+
+        var activeMemberships = memberships.Where(m => m.EndDate is null).ToList();
+        var activeClubIds = activeMemberships.Select(m => m.ClubId).ToHashSet();
+        var addedClubIds = editForm.CurrentClubIds.Except(activeClubIds).ToList();
+        var removedClubIds = activeClubIds.Except(editForm.CurrentClubIds).ToList();
+
+        if (addedClubIds.Count > 0 || removedClubIds.Count > 0)
+        {
+            var addedNames = clubs.Where(c => addedClubIds.Contains(c.Id)).Select(c => c.Name).ToList();
+            var removedNames = clubs.Where(c => removedClubIds.Contains(c.Id)).Select(c => c.Name).ToList();
+            var parts = new List<string>();
+            if (addedNames.Count > 0) parts.Add($"ajouter {string.Join(", ", addedNames)}");
+            if (removedNames.Count > 0) parts.Add($"retirer {string.Join(", ", removedNames)}");
+            var question = $"{editForm.FirstName} {editForm.LastName} : {string.Join(" et ", parts)} aujourd'hui ?";
+            if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+        }
+
+        var entity = await Db.Players.FindAsync(Id);
+        if (entity is null) return;
+
+        entity.FirstName = editForm.FirstName.Trim();
+        entity.LastName = editForm.LastName.Trim();
+        entity.BirthDate = DateOnly.FromDateTime(editForm.BirthDate);
+        entity.Position = editForm.Position;
+        entity.PreferredNumber = editForm.PreferredNumber;
+        entity.IsCaptain = editForm.IsCaptain;
+
+        if (editPhoto is not null)
+        {
+            entity.PhotoPath = await FileStorage.SavePhotoAsync(editPhoto, Uploads.Root, "players");
+        }
+        else if (removePhoto)
+        {
+            entity.PhotoPath = null;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        foreach (var membership in activeMemberships.Where(m => removedClubIds.Contains(m.ClubId)))
+        {
+            var membershipEntity = await Db.PlayerClubs.FindAsync(membership.Id);
+            if (membershipEntity is not null) membershipEntity.EndDate = today;
+        }
+        foreach (var clubId in addedClubIds)
+        {
+            Db.PlayerClubs.Add(new PlayerClub { PlayerId = Id, ClubId = clubId, StartDate = today });
+        }
+
+        await Db.SaveChangesAsync();
+        editModal?.Close();
+        await LoadAsync();
+    }
+
+    private static int Age(DateOnly birthDate)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var age = today.Year - birthDate.Year;
+        if (birthDate > today.AddYears(-age)) age--;
+        return age;
+    }
+
+    private static string Initials(Player p)
+    {
+        var a = p.FirstName.Length > 0 ? p.FirstName[0].ToString() : "";
+        var b = p.LastName.Length > 0 ? p.LastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    private static string ClubAcronym(Club club)
+    {
+        if (!string.IsNullOrWhiteSpace(club.Acronym)) return club.Acronym.ToUpper();
+        var parts = club.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? string.Concat(parts.Select(p => p[0])).ToUpper()[..Math.Min(3, parts.Length)]
+            : club.Name[..Math.Min(2, club.Name.Length)].ToUpper();
+    }
+
+    private RenderFragment ClubPicker(HashSet<int> selectedIds) => @<div class="player-picker">
+        @if (editClubOptions.Count == 0)
+        {
+            <div class="player-picker-empty">Aucun club préféré pour le moment.</div>
+        }
+        else
+        {
+            @foreach (var club in editClubOptions)
+            {
+                var isChecked = selectedIds.Contains(club.Id);
+                <label class="player-picker-row @(isChecked ? "checked" : "")">
+                    <span class="player-picker-avatar">
+                        @if (!string.IsNullOrEmpty(club.LogoPath))
+                        {
+                            <img src="@club.LogoPath" alt="" />
+                        }
+                        else
+                        {
+                            @ClubAcronym(club)
+                        }
+                    </span>
+                    <span class="player-picker-info">
+                        <span class="player-picker-name">@club.Name</span>
+                    </span>
+                    <span class="toggle-switch player-picker-check">
+                        <input type="checkbox" checked="@isChecked"
+                               @onchange="e => ToggleSelection(selectedIds, club.Id, (bool)e.Value!)" />
+                        <span class="toggle-slider"></span>
+                    </span>
+                </label>
+            }
+        }
+    </div>;
+
+    private class PlayerEditForm
+    {
+        public string FirstName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public DateTime BirthDate { get; set; } = DateTime.Today.AddYears(-10);
+        public string Position { get; set; } = "Milieu";
+        public int? PreferredNumber { get; set; }
+        public bool IsCaptain { get; set; }
+        public HashSet<int> CurrentClubIds { get; set; } = [];
+    }
+}

@@ -1,0 +1,291 @@
+@page "/settings"
+@attribute [Authorize(Roles = "SuperAdmin")]
+@rendermode InteractiveServer
+@inject AppDbContext Db
+@inject IDataProtectionProvider DataProtection
+@inject IEmailSender EmailSender
+@inject IJSRuntime JS
+@using Microsoft.AspNetCore.DataProtection
+
+<PageTitle>Réglages</PageTitle>
+
+<div class="container">
+    <PageHero Accent="system" Eyebrow="Administration" Title="Réglages" Subtitle="Configuration de l'envoi d'emails et des modèles d'invitation." />
+
+    <div class="card card-pad settings-card">
+        <div class="settings-card-header">
+            <div class="settings-icon">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M4 4h16v16H4z"></path><path d="M4 6l8 7 8-7"></path></svg>
+            </div>
+            <div>
+                <div class="section-title">Configuration email (Brevo)</div>
+                <p class="section-sub">Clé API Brevo utilisée pour l'envoi des invitations.</p>
+            </div>
+        </div>
+
+        @if (smtpMessage is not null)
+        {
+            <div class="alert @(smtpSuccess ? "alert-success" : "alert-danger")" style="margin-bottom: 16px;">@smtpMessage</div>
+        }
+
+        <EditForm Model="smtpForm" OnValidSubmit="SaveSmtp">
+            <div class="settings-grid-2" style="margin-bottom: 14px;">
+                <div class="field">
+                    <label>Email expéditeur</label>
+                    <input type="email" @bind="smtpForm.SenderEmail" placeholder="Adresse expéditrice validée dans Brevo" />
+                </div>
+                <div class="field">
+                    <label>Nom affiché</label>
+                    <input @bind="smtpForm.SenderDisplayName" placeholder="FootStats" />
+                </div>
+            </div>
+            <div class="field" style="margin-bottom: 16px;">
+                <label>Clé API Brevo</label>
+                <PasswordField @bind-Value="smtpForm.ApiKey" Placeholder="@(hasStoredPassword ? "Laisser vide pour ne pas changer" : "xkeysib-...")" />
+            </div>
+            <div class="settings-actions-end">
+                <button class="btn btn-primary btn-sm" type="submit">Enregistrer</button>
+            </div>
+        </EditForm>
+
+        <div class="settings-divider"></div>
+
+        <div class="settings-subheading">Test d'envoi</div>
+        <div class="settings-inline-row">
+            <div class="field" style="flex-grow: 1;">
+                <label>Adresse de destination</label>
+                <input type="email" @bind="testEmail" placeholder="adresse@exemple.com" />
+            </div>
+            <button class="btn btn-outline btn-sm" type="button" @onclick="SendTestEmail" disabled="@sendingTest">
+                @(sendingTest ? "Envoi..." : "Envoyer un test")
+            </button>
+        </div>
+        @if (lastTestedAt is not null)
+        {
+            <div class="settings-status-line">
+                <span class="settings-status-dot @(IsLastTestSuccess ? "ok" : "ko")"></span>
+                Dernier test @(IsLastTestSuccess ? "réussi" : "échoué") le @lastTestedAt?.ToString("dd/MM/yyyy 'à' HH:mm")@(IsLastTestSuccess ? "" : $" — {lastTestResult}")
+            </div>
+        }
+    </div>
+
+    <div class="card card-pad settings-card">
+        <div class="settings-card-header">
+            <div class="settings-icon">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M4 4h16v16H4z"></path><path d="M4 6l8 7 8-7"></path></svg>
+            </div>
+            <div>
+                <div class="section-title">Modèles d'email d'invitation</div>
+                <p class="section-sub">Un modèle par type d'invitation envoyée.</p>
+            </div>
+        </div>
+
+        <div class="settings-tabbar">
+            @foreach (var type in Enum.GetValues<EmailTemplateType>())
+            {
+                <div class="settings-tab @(activeType == type ? "active" : "")" @onclick="() => activeType = type">
+                    @TypeLabel(type)
+                </div>
+            }
+        </div>
+
+        @if (templateMessage is not null)
+        {
+            <div class="alert alert-success" style="margin-bottom: 16px;">@templateMessage</div>
+        }
+
+        @if (templateForms.TryGetValue(activeType, out var templateForm))
+        {
+            <EditForm Model="templateForm" OnValidSubmit="() => SaveTemplate(activeType)">
+                <div class="field" style="margin-bottom: 14px;">
+                    <label>Sujet</label>
+                    <input @bind="templateForm.Subject" />
+                </div>
+                <div class="field" style="margin-bottom: 12px;">
+                    <label>Corps du message</label>
+                    <textarea @bind="templateForm.BodyHtml" rows="14" style="width: 100%; font-family: monospace;"></textarea>
+                </div>
+
+                <p class="settings-hint">Placeholders disponibles — cliquer pour copier :</p>
+                <div class="settings-chips">
+                    @foreach (var placeholder in Placeholders)
+                    {
+                        <span class="settings-chip" title="Copier" @onclick="() => CopyPlaceholder(placeholder)">@placeholder</span>
+                    }
+                </div>
+
+                <div class="settings-actions-row">
+                    <button class="btn-text" type="button" @onclick="() => ResetTemplate(activeType)">Réinitialiser au modèle par défaut</button>
+                    <button class="btn btn-primary btn-sm" type="submit">Enregistrer</button>
+                </div>
+            </EditForm>
+        }
+    </div>
+</div>
+
+@code {
+    private SmtpFormModel smtpForm = new();
+    private bool hasStoredPassword;
+    private string? smtpMessage;
+    private bool smtpSuccess;
+
+    private string testEmail = "";
+    private bool sendingTest;
+    private DateTime? lastTestedAt;
+    private string? lastTestResult;
+
+    private EmailTemplateType activeType = EmailTemplateType.ManageChildren;
+    private Dictionary<EmailTemplateType, TemplateFormModel> templateForms = new();
+    private Dictionary<EmailTemplateType, int> templateIds = new();
+    private string? templateMessage;
+
+    private static readonly string[] Placeholders =
+    [
+        "{{FirstName}}", "{{Username}}", "{{AdminName}}",
+        "{{PlayerNames}}", "{{InvitationLink}}", "{{ExpirationDate}}",
+        "{{EventLabel}}", "{{EventDate}}", "{{EventTime}}", "{{Location}}", "{{ClubName}}"
+    ];
+
+    private bool IsLastTestSuccess => lastTestResult == "Succès";
+
+    private async Task CopyPlaceholder(string placeholder)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", placeholder);
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await Db.SmtpSettings.FirstOrDefaultAsync();
+        if (settings is not null)
+        {
+            smtpForm.SenderEmail = settings.SenderEmail ?? "";
+            smtpForm.SenderDisplayName = settings.SenderDisplayName ?? "";
+            hasStoredPassword = !string.IsNullOrEmpty(settings.ApiKeyEncrypted);
+            lastTestedAt = settings.LastTestedAt;
+            lastTestResult = settings.LastTestResult;
+        }
+
+        var templates = await Db.EmailTemplates.ToListAsync();
+        foreach (var template in templates)
+        {
+            templateForms[template.Type] = new TemplateFormModel { Subject = template.Subject, BodyHtml = template.BodyHtml };
+            templateIds[template.Type] = template.Id;
+        }
+    }
+
+    private async Task SaveSmtp()
+    {
+        smtpMessage = null;
+        var settings = await Db.SmtpSettings.FirstOrDefaultAsync();
+        if (settings is null)
+        {
+            settings = new SmtpSettings();
+            Db.SmtpSettings.Add(settings);
+        }
+
+        settings.SenderEmail = string.IsNullOrWhiteSpace(smtpForm.SenderEmail) ? null : smtpForm.SenderEmail.Trim();
+        settings.SenderDisplayName = string.IsNullOrWhiteSpace(smtpForm.SenderDisplayName) ? null : smtpForm.SenderDisplayName.Trim();
+
+        if (!string.IsNullOrEmpty(smtpForm.ApiKey))
+        {
+            settings.ApiKeyEncrypted = EmailService.EncryptApiKey(DataProtection, smtpForm.ApiKey);
+            hasStoredPassword = true;
+        }
+
+        await Db.SaveChangesAsync();
+        smtpForm.ApiKey = "";
+        smtpSuccess = true;
+        smtpMessage = "Réglages enregistrés.";
+    }
+
+    private async Task SendTestEmail()
+    {
+        if (string.IsNullOrWhiteSpace(testEmail)) return;
+        sendingTest = true;
+        smtpMessage = null;
+        string result;
+        bool success;
+        try
+        {
+            await EmailSender.SendTestAsync(testEmail.Trim());
+            result = "Succès";
+            success = true;
+        }
+        catch (Exception ex)
+        {
+            result = ex.Message;
+            success = false;
+        }
+
+        var settings = await Db.SmtpSettings.FirstOrDefaultAsync();
+        if (settings is not null)
+        {
+            settings.LastTestedAt = DateTime.UtcNow;
+            settings.LastTestResult = result;
+            await Db.SaveChangesAsync();
+            lastTestedAt = settings.LastTestedAt;
+            lastTestResult = settings.LastTestResult;
+        }
+
+        smtpSuccess = success;
+        smtpMessage = success ? "Email de test envoyé avec succès." : $"Échec de l'envoi : {result}";
+        sendingTest = false;
+    }
+
+    private async Task SaveTemplate(EmailTemplateType type)
+    {
+        templateMessage = null;
+        if (!templateForms.TryGetValue(type, out var form)) return;
+
+        var template = await Db.EmailTemplates.FirstOrDefaultAsync(t => t.Type == type);
+        if (template is null)
+        {
+            template = new EmailTemplate { Type = type, Subject = form.Subject, BodyHtml = form.BodyHtml };
+            Db.EmailTemplates.Add(template);
+        }
+        else
+        {
+            template.Subject = form.Subject;
+            template.BodyHtml = form.BodyHtml;
+            template.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await Db.SaveChangesAsync();
+        templateIds[type] = template.Id;
+        templateMessage = "Modèle enregistré.";
+    }
+
+    private void ResetTemplate(EmailTemplateType type)
+    {
+        var (subject, bodyHtml) = DefaultTemplates.DefaultFor(type);
+        templateForms[type] = new TemplateFormModel { Subject = subject, BodyHtml = bodyHtml };
+        templateMessage = null;
+    }
+
+    private static string TypeLabel(EmailTemplateType type) => type switch
+    {
+        EmailTemplateType.ManageChildren => "Gestion des enfants",
+        EmailTemplateType.ViewStats => "Consultation des statistiques",
+        EmailTemplateType.AccountReactivated => "Compte réactivé (Admin)",
+        EmailTemplateType.AccountVerification => "Confirmation d'inscription",
+        EmailTemplateType.PasswordReset => "Mot de passe oublié",
+        EmailTemplateType.ShareInviteManage => "Partage — gestion (lien)",
+        EmailTemplateType.ShareInviteConsultant => "Partage — consultation (lien)",
+        EmailTemplateType.ShareInviteWelcome => "Partage — bienvenue (compte créé)",
+        EmailTemplateType.MatchReminder => "Rappel de match/tournoi (veille)",
+        _ => type.ToString()
+    };
+
+    private class SmtpFormModel
+    {
+        public string SenderEmail { get; set; } = "";
+        public string SenderDisplayName { get; set; } = "";
+        public string ApiKey { get; set; } = "";
+    }
+
+    private class TemplateFormModel
+    {
+        public string Subject { get; set; } = "";
+        public string BodyHtml { get; set; } = "";
+    }
+}
