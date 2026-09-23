@@ -1,6 +1,8 @@
 bin/
 obj/
-data/
+# Ancré à la racine : sans le "/" initial, cette règle excluait aussi FootStats.Web/Data/
+# (Git est insensible à la casse sous Windows), donc tout le code des services.
+/data/
 *.db
 *.db-shm
 *.db-wal
@@ -13,6 +15,7 @@ FootStats.Web/publish/
 # Photos/logos uploadés par les utilisateurs (données personnelles, pas du code source ;
 # stockées en prod sur un volume persistant séparé, voir README)
 FootStats.Web/wwwroot/uploads/
+FootStats.Web/Data/uploads/
 
 # Verrous/état runtime d'outils locaux
 .claude/scheduled_tasks.lock
