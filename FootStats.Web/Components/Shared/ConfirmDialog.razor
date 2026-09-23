@@ -1,0 +1,98 @@
+@* Boîte de confirmation unique, montée une fois dans le layout : les pages l'ouvrent via ConfirmService.AskAsync. *@
+@implements IDisposable
+@inject ConfirmService Confirm
+
+@if (Confirm.Current is { } request)
+{
+    <div class="modal-backdrop" @onclick="Cancel">
+        <div class="confirm-panel" @onclick:stopPropagation="true">
+            <div class="confirm-grip"><span></span></div>
+
+            <div class="confirm-head">
+                <div class="confirm-icon @ToneClass(request.Tone)">
+                    <svg viewBox="0 0 24 24" class="icon">@((MarkupString)IconPaths(request.Icon))</svg>
+                </div>
+                <div class="confirm-title">@request.Title</div>
+                <button class="icon-btn" type="button" @onclick="Cancel" aria-label="Fermer">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+                </button>
+            </div>
+
+            <div class="confirm-body">
+                <p class="confirm-message">@request.Message</p>
+
+                @if (!string.IsNullOrWhiteSpace(request.SubjectName))
+                {
+                    <div class="confirm-subject">
+                        <span class="confirm-subject-avatar">
+                            @if (!string.IsNullOrEmpty(request.SubjectImagePath))
+                            {
+                                <img src="@request.SubjectImagePath" alt="" />
+                            }
+                            else
+                            {
+                                @(request.SubjectInitials ?? Initials(request.SubjectName))
+                            }
+                        </span>
+                        <div style="min-width: 0;">
+                            <div class="confirm-subject-name">@request.SubjectName</div>
+                            @if (!string.IsNullOrWhiteSpace(request.SubjectMeta))
+                            {
+                                <div class="confirm-subject-meta">@request.SubjectMeta</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="confirm-actions">
+                <button type="button" class="btn btn-outline" @onclick="Cancel">@request.CancelLabel</button>
+                <button type="button" class="btn @ConfirmButtonClass(request.Tone)" @onclick="Accept">@request.ConfirmLabel</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized() => Confirm.OnChanged += HandleChanged;
+
+    public void Dispose() => Confirm.OnChanged -= HandleChanged;
+
+    private void HandleChanged() => InvokeAsync(StateHasChanged);
+
+    private void Cancel() => Confirm.Resolve(false);
+
+    private void Accept() => Confirm.Resolve(true);
+
+    private static string ToneClass(ConfirmTone tone) => tone switch
+    {
+        ConfirmTone.Danger => "tone-danger",
+        ConfirmTone.Warning => "tone-warning",
+        _ => "tone-neutral"
+    };
+
+    private static string ConfirmButtonClass(ConfirmTone tone) =>
+        tone == ConfirmTone.Danger ? "btn-danger" : "btn-primary";
+
+    private static string Initials(string name)
+    {
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}".ToUpper()
+            : name[..Math.Min(2, name.Length)].ToUpper();
+    }
+
+    private static string IconPaths(ConfirmIcon icon) => icon switch
+    {
+        ConfirmIcon.Trash => """<path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path>""",
+        ConfirmIcon.Archive => """<rect x="3" y="4" width="18" height="5" rx="1"></rect><path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"></path><path d="M10 13h4"></path>""",
+        ConfirmIcon.Star => """<path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"></path>""",
+        ConfirmIcon.Refresh => """<path d="M3 12a9 9 0 1 0 3-6.7"></path><path d="M3 4v5h5"></path>""",
+        ConfirmIcon.Power => """<path d="M12 3v9"></path><path d="M6.6 6.6a9 9 0 1 0 10.8 0"></path>""",
+        ConfirmIcon.Link => """<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"></path><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"></path>""",
+        ConfirmIcon.UserOff => """<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M17 8l5 5M22 8l-5 5"></path>""",
+        ConfirmIcon.Calendar => """<rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path>""",
+        ConfirmIcon.Transfer => """<path d="M17 3l4 4-4 4M21 7H9M7 21l-4-4 4-4M3 17h12"></path>""",
+        _ => """<circle cx="12" cy="12" r="9.5"></circle><path d="M9.6 9.2a2.5 2.5 0 0 1 4.9.8c0 1.7-2.5 2.5-2.5 2.5"></path><path d="M12 17h.01"></path>"""
+    };
+}

@@ -4,7 +4,7 @@
 @inject AppDbContext Db
 @inject NavigationManager Navigation
 @inject UploadsPathProvider Uploads
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
 <PageTitle>@player?.FirstName @player?.LastName - FootStats</PageTitle>
@@ -247,8 +247,26 @@ else
     private async Task DeleteMembership(int membershipId)
     {
         if (!canManage) return;
-        var clubName = memberships.FirstOrDefault(m => m.Id == membershipId)?.Club?.Name ?? "ce club";
-        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {clubName} ?")) return;
+        var membershipToDelete = memberships.FirstOrDefault(m => m.Id == membershipId);
+        string? membershipPeriod = null;
+        if (membershipToDelete is { } m)
+        {
+            membershipPeriod = m.EndDate is { } membershipEnd
+                ? $"Du {m.StartDate:dd.MM.yyyy} au {membershipEnd:dd.MM.yyyy}"
+                : $"Depuis le {m.StartDate:dd.MM.yyyy}";
+        }
+
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer l'appartenance",
+            Message = "Ce passage en club sera retiré du parcours du joueur. Les saisons et statistiques déjà enregistrées ne sont pas supprimées.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = membershipToDelete?.Club?.Name ?? "Ce club",
+            SubjectMeta = membershipPeriod,
+            SubjectImagePath = membershipToDelete?.Club?.LogoPath
+        })) return;
 
         var membership = await Db.PlayerClubs.FindAsync(membershipId);
         if (membership is null) return;
@@ -315,8 +333,16 @@ else
             var parts = new List<string>();
             if (addedNames.Count > 0) parts.Add($"ajouter {string.Join(", ", addedNames)}");
             if (removedNames.Count > 0) parts.Add($"retirer {string.Join(", ", removedNames)}");
-            var question = $"{editForm.FirstName} {editForm.LastName} : {string.Join(" et ", parts)} aujourd'hui ?";
-            if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+            if (!await Confirm.AskAsync(new ConfirmRequest
+            {
+                Title = "Changement de club",
+                Message = $"À la date d'aujourd'hui : {string.Join(" et ", parts)}.",
+                ConfirmLabel = "Appliquer",
+                Tone = ConfirmTone.Warning,
+                Icon = ConfirmIcon.Transfer,
+                SubjectName = $"{editForm.FirstName} {editForm.LastName}",
+                SubjectMeta = editForm.Position
+            })) return;
         }
 
         var entity = await Db.Players.FindAsync(Id);

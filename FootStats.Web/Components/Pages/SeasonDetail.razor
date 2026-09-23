@@ -4,7 +4,7 @@
 @inject AppDbContext Db
 @inject StatsService Stats
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
 <PageTitle>@season?.Label - FootStats</PageTitle>
@@ -614,8 +614,16 @@ else
         var competition = await Db.EquestrianCompetitions.FindAsync(competitionId);
         if (competition is null) return;
 
-        var label = string.IsNullOrWhiteSpace(competition.Name) ? "ce concours" : competition.Name;
-        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {label} ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer le concours",
+            Message = "Cette action est définitive : les épreuves et classements de ce concours seront supprimés avec lui.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = string.IsNullOrWhiteSpace(competition.Name) ? "Concours" : competition.Name,
+            SubjectMeta = $"{competition.City} · {competition.Date:dd.MM.yyyy}"
+        })) return;
 
         Db.EquestrianCompetitions.Remove(competition);
         await Db.SaveChangesAsync();

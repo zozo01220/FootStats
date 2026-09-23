@@ -5,7 +5,7 @@
 @inject NavigationManager Navigation
 @inject CurrentUserService CurrentUser
 @inject StatsService Stats
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 
 <PageTitle>Saisons - FootStats</PageTitle>
 
@@ -651,10 +651,27 @@
     private async Task ToggleArchive(Season season)
     {
         if (!canManage) return;
-        var question = season.IsArchived
-            ? $"Réactiver la saison {season.Label} de {season.Player?.FirstName} {season.Player?.LastName} ?"
-            : $"Terminer la saison {season.Label} de {season.Player?.FirstName} {season.Player?.LastName} au {season.Club?.Name} aujourd'hui ? Le joueur pourra ensuite être rattaché à un autre club sur une nouvelle saison.";
-        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+        var request = season.IsArchived
+            ? new ConfirmRequest
+            {
+                Title = "Réactiver la saison",
+                Message = "Cette saison repassera en « saison en cours » et redeviendra modifiable.",
+                ConfirmLabel = "Réactiver",
+                Icon = ConfirmIcon.Refresh,
+                SubjectName = $"{season.Player?.FirstName} {season.Player?.LastName}",
+                SubjectMeta = $"{season.Label} · {season.Category} · {season.Club?.Name}"
+            }
+            : new ConfirmRequest
+            {
+                Title = "Terminer la saison",
+                Message = "La saison sera close à la date d'aujourd'hui et passera en « saisons passées ». Le joueur pourra ensuite être rattaché à un autre club sur une nouvelle saison.",
+                ConfirmLabel = "Terminer",
+                Tone = ConfirmTone.Warning,
+                Icon = ConfirmIcon.Archive,
+                SubjectName = $"{season.Player?.FirstName} {season.Player?.LastName}",
+                SubjectMeta = $"{season.Label} · {season.Category} · {season.Club?.Name}"
+            };
+        if (!await Confirm.AskAsync(request)) return;
 
         var entity = await Db.Seasons.FindAsync(season.Id);
         if (entity is null) return;

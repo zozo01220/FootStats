@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @inject AppDbContext Db
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
 <PageTitle>@(competition?.Name ?? "Concours") - FootStats</PageTitle>
@@ -170,7 +170,16 @@ else
         var entry = await Db.EquestrianEntries.FindAsync(entryId);
         if (entry is null) return;
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer l'épreuve {entry.Discipline} ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer l'épreuve",
+            Message = "Cette épreuve et son classement seront définitivement supprimés du concours.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = entry.Discipline,
+            SubjectMeta = $"Classement : {entry.Ranking}"
+        })) return;
 
         Db.EquestrianEntries.Remove(entry);
         await Db.SaveChangesAsync();

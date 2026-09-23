@@ -22,6 +22,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<StatsService>();
 builder.Services.AddScoped<CurrentUserService>();
 builder.Services.AddScoped<CalendarService>();
+builder.Services.AddScoped<ConfirmService>();
 builder.Services.AddSingleton(new UploadsPathProvider(uploadsPath));
 builder.Services.AddDataProtection();
 builder.Services.AddHttpClient<IEmailSender, EmailService>();

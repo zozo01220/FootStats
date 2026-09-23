@@ -4,7 +4,7 @@
 @inject AppDbContext Db
 @inject NavigationManager Navigation
 @inject UploadsPathProvider Uploads
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
 <PageTitle>Joueurs</PageTitle>
@@ -233,7 +233,17 @@
         var player = players.FirstOrDefault(p => p.Id == id);
         if (player is null) return;
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {player.FirstName} {player.LastName} ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer le joueur",
+            Message = "Cette action est définitive. Un joueur ayant encore des clubs ou des saisons enregistrés ne peut pas être supprimé.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = $"{player.FirstName} {player.LastName}",
+            SubjectMeta = player.Position,
+            SubjectImagePath = player.PhotoPath
+        })) return;
 
         Db.ChangeTracker.Clear();
 
@@ -256,10 +266,19 @@
     private async Task ToggleActive(Player player)
     {
         if (!canManage) return;
-        var question = player.IsActive
-            ? $"Marquer {player.FirstName} {player.LastName} comme inactif ?"
-            : $"Réactiver {player.FirstName} {player.LastName} ?";
-        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = player.IsActive ? "Marquer comme inactif" : "Réactiver le joueur",
+            Message = player.IsActive
+                ? "Le joueur sera masqué des listes actives. Ses saisons et statistiques restent consultables."
+                : "Le joueur réapparaîtra parmi les joueurs actifs.",
+            ConfirmLabel = player.IsActive ? "Marquer inactif" : "Réactiver",
+            Tone = player.IsActive ? ConfirmTone.Warning : ConfirmTone.Neutral,
+            Icon = player.IsActive ? ConfirmIcon.Power : ConfirmIcon.Refresh,
+            SubjectName = $"{player.FirstName} {player.LastName}",
+            SubjectMeta = player.Position,
+            SubjectImagePath = player.PhotoPath
+        })) return;
 
         var entity = await Db.Players.FindAsync(player.Id);
         if (entity is null) return;
@@ -298,12 +317,22 @@
         var oldClubName = currentMembership?.Club?.Name;
         var newClubName = clubs.FirstOrDefault(c => c.Id == transferForm.ClubId)?.Name;
 
-        var question = oldClubName is null
-            ? $"Assigner {transferPlayer.FirstName} {transferPlayer.LastName} à {newClubName} aujourd'hui ?"
+        var transferMessage = oldClubName is null
+            ? $"Le joueur sera rattaché à {newClubName} à la date d'aujourd'hui."
             : newClubName is null
-                ? $"Retirer {transferPlayer.FirstName} {transferPlayer.LastName} de {oldClubName} aujourd'hui ?"
-                : $"Faire passer {transferPlayer.FirstName} {transferPlayer.LastName} de {oldClubName} à {newClubName} aujourd'hui ?";
-        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+                ? $"Le passage à {oldClubName} sera clos à la date d'aujourd'hui, sans nouveau club."
+                : $"Le passage à {oldClubName} sera clos aujourd'hui et le joueur rattaché à {newClubName}.";
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = newClubName is null ? "Retirer du club" : "Changement de club",
+            Message = transferMessage,
+            ConfirmLabel = newClubName is null ? "Retirer" : "Transférer",
+            Tone = ConfirmTone.Warning,
+            Icon = ConfirmIcon.Transfer,
+            SubjectName = $"{transferPlayer.FirstName} {transferPlayer.LastName}",
+            SubjectMeta = transferPlayer.Position,
+            SubjectImagePath = transferPlayer.PhotoPath
+        })) return;
 
         var today = DateOnly.FromDateTime(DateTime.Today);
         if (currentMembership is not null)

@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @inject AppDbContext Db
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
 <PageTitle>@(tournament?.Name ?? tournament?.EventType.ToString()) - FootStats</PageTitle>
@@ -447,8 +447,16 @@ else
         var match = await Db.Matches.FindAsync(matchId);
         if (match is null) return;
 
-        var label = string.IsNullOrWhiteSpace(match.Opponent) ? $"Équipe {match.TeamNumber}" : $"le match contre {match.Opponent}";
-        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer {label} ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer le match",
+            Message = "Cette action est définitive : les buts et passes de ce match ne compteront plus dans les statistiques de la saison.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = string.IsNullOrWhiteSpace(match.Opponent) ? $"Équipe {match.TeamNumber}" : match.Opponent,
+            SubjectMeta = $"Équipe {match.TeamNumber} · {match.TeamGoalsFor} – {match.TeamGoalsAgainst} · {match.PlayerGoals} but{(match.PlayerGoals > 1 ? "s" : "")}"
+        })) return;
 
         Db.Matches.Remove(match);
         await Db.SaveChangesAsync();

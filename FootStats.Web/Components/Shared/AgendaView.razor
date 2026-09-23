@@ -4,7 +4,7 @@
 @inject CalendarService Calendar
 @inject NavigationManager Navigation
 @inject AppDbContext Db
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 
 <div class="cal-toolbar">
     <div class="cal-nav">
@@ -552,7 +552,13 @@
 
             if (e.IsCancelled)
             {
-                if (!await JS.InvokeAsync<bool>("confirm", $"Réactiver la séance du {DayLabel(e.Date)} ?")) return;
+                if (!await Confirm.AskAsync(new ConfirmRequest
+                {
+                    Title = "Réactiver la séance",
+                    Message = $"La séance du {DayLabel(e.Date)} redeviendra active dans le calendrier.",
+                    ConfirmLabel = "Réactiver",
+                    Icon = ConfirmIcon.Refresh
+                })) return;
                 var occurrenceOverride = await GetOrCreateOccurrenceOverrideAsync(trainingId, e.Date);
                 occurrenceOverride.IsCancelled = false;
                 occurrenceOverride.CancellationReason = null;
@@ -567,7 +573,16 @@
             return;
         }
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Annuler {ChipLabel(e)} du {e.Date:dd.MM.yyyy} ? Cette action est définitive.")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer l'événement",
+            Message = "Cette action est définitive : les matchs enregistrés pour cet événement seront supprimés avec lui.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = ChipLabel(e),
+            SubjectMeta = $"{e.Date:dd.MM.yyyy} · {e.Location}"
+        })) return;
         var tournament = e.TournamentId is { } tournamentId ? await Db.Tournaments.FindAsync(tournamentId) : null;
         if (tournament is null) return;
         Db.Tournaments.Remove(tournament);

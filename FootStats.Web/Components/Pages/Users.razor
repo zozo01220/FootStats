@@ -2,7 +2,7 @@
 @attribute [Authorize(Roles = "Admin,SuperAdmin")]
 @rendermode InteractiveServer
 @inject AppDbContext Db
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 @inject InvitationService InvitationSvc
 @inject ShareInviteService ShareInviteSvc
@@ -371,7 +371,14 @@
 
     private async Task RevokeShareInvite(int shareInviteId)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Révoquer ce lien de partage ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Révoquer le lien",
+            Message = "Le lien cessera immédiatement de fonctionner. Si personne ne l'a encore utilisé, l'invitation est perdue.",
+            ConfirmLabel = "Révoquer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Link
+        })) return;
         await ShareInviteSvc.RevokeAsync(shareInviteId);
         await LoadPendingShareInvitesAsync();
     }
@@ -551,8 +558,16 @@
     private async Task RevokeAccess(int userId)
     {
         var user = displayUsers.FirstOrDefault(u => u.Id == userId);
-        var label = user is not null ? $"{user.FirstName} {user.LastName}" : "cet utilisateur";
-        if (!await JS.InvokeAsync<bool>("confirm", $"Révoquer l'accès de {label} ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Révoquer l'accès",
+            Message = "Cette personne ne pourra plus se connecter tant que vous ne l'aurez pas réactivée.",
+            ConfirmLabel = "Révoquer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.UserOff,
+            SubjectName = user is not null ? $"{user.FirstName} {user.LastName}" : "Cet utilisateur",
+            SubjectMeta = user?.Email
+        })) return;
         await InvitationSvc.RevokeAsync(userId);
         await LoadAsync();
         editModal?.Close();
@@ -789,7 +804,14 @@
 
     private async Task DisconnectUser(int userId)
     {
-        if (!await JS.InvokeAsync<bool>("confirm", "Déconnecter cet administrateur ? Il devra se reconnecter mais conserve son accès.")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Déconnecter la session",
+            Message = "L'administrateur devra se reconnecter, mais il conserve son accès au compte.",
+            ConfirmLabel = "Déconnecter",
+            Tone = ConfirmTone.Warning,
+            Icon = ConfirmIcon.Power
+        })) return;
         await CurrentUser.ForceLogoutAsync(userId);
         await LoadAsync();
     }
@@ -807,12 +829,29 @@
 
             if (entity.IsActive)
             {
-                if (!await JS.InvokeAsync<bool>("confirm", $"Révoquer l'accès de {entity.FirstName} {entity.LastName} ? Il ne pourra plus se connecter tant que vous ne l'aurez pas réactivé.")) return;
+                if (!await Confirm.AskAsync(new ConfirmRequest
+                {
+                    Title = "Révoquer l'accès",
+                    Message = "Cette personne ne pourra plus se connecter tant que vous ne l'aurez pas réactivée.",
+                    ConfirmLabel = "Révoquer",
+                    Tone = ConfirmTone.Danger,
+                    Icon = ConfirmIcon.UserOff,
+                    SubjectName = $"{entity.FirstName} {entity.LastName}",
+                    SubjectMeta = entity.Email
+                })) return;
                 await InvitationSvc.RevokeAsync(entity.Id);
             }
             else
             {
-                if (!await JS.InvokeAsync<bool>("confirm", $"Réactiver {entity.FirstName} {entity.LastName} ?")) return;
+                if (!await Confirm.AskAsync(new ConfirmRequest
+                {
+                    Title = "Réactiver l'accès",
+                    Message = "Cette personne pourra de nouveau se connecter et recevra un email l'en informant.",
+                    ConfirmLabel = "Réactiver",
+                    Icon = ConfirmIcon.Refresh,
+                    SubjectName = $"{entity.FirstName} {entity.LastName}",
+                    SubjectMeta = entity.Email
+                })) return;
                 entity.IsActive = true;
                 await Db.SaveChangesAsync();
                 try
@@ -830,10 +869,18 @@
             return;
         }
 
-        var question = user.IsActive
-            ? $"Marquer {user.FirstName} {user.LastName} comme inactif ?"
-            : $"Réactiver {user.FirstName} {user.LastName} ?";
-        if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = user.IsActive ? "Marquer comme inactif" : "Réactiver l'utilisateur",
+            Message = user.IsActive
+                ? "L'utilisateur sera marqué inactif et masqué des listes actives."
+                : "L'utilisateur réapparaîtra parmi les comptes actifs.",
+            ConfirmLabel = user.IsActive ? "Marquer inactif" : "Réactiver",
+            Tone = user.IsActive ? ConfirmTone.Warning : ConfirmTone.Neutral,
+            Icon = user.IsActive ? ConfirmIcon.Power : ConfirmIcon.Refresh,
+            SubjectName = $"{user.FirstName} {user.LastName}",
+            SubjectMeta = user.Email
+        })) return;
 
         var simpleEntity = await Db.Users.FindAsync(user.Id);
         if (simpleEntity is null) return;

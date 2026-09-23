@@ -5,7 +5,7 @@
 @inject CurrentUserService CurrentUser
 @inject NavigationManager Navigation
 @inject AppDbContext Db
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 
 <PageTitle>Calendrier - FootStats</PageTitle>
 
@@ -971,7 +971,17 @@
         var training = await Db.Trainings.FindAsync(trainingId);
         if (training is null) return;
 
-        if (!await JS.InvokeAsync<bool>("confirm", $"Supprimer cet entraînement récurrent ({TrainingOccurrenceHelper.DaysLabel(training.Days)}) ?")) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Supprimer l'entraînement",
+            Message = "Toutes les séances de cette récurrence disparaîtront du calendrier, y compris les présences déjà pointées.",
+            ConfirmLabel = "Supprimer",
+            Tone = ConfirmTone.Danger,
+            Icon = ConfirmIcon.Trash,
+            SubjectName = TrainingOccurrenceHelper.DaysLabel(training.Days),
+            SubjectMeta = $"{training.StartTime:HH:mm} – {training.EndTime:HH:mm} · {training.Location}",
+            SubjectInitials = "EN"
+        })) return;
 
         Db.Trainings.Remove(training);
         await Db.SaveChangesAsync();

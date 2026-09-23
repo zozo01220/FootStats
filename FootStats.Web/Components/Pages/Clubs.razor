@@ -3,7 +3,7 @@
 @rendermode InteractiveServer
 @inject AppDbContext Db
 @inject UploadsPathProvider Uploads
-@inject IJSRuntime JS
+@inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
 <PageTitle>Clubs</PageTitle>
@@ -298,15 +298,33 @@
                     .Where(p => memberships.Any(m => m.PlayerId == p.Id))
                     .Select(p => $"{p.FirstName} {p.LastName}")
                     .ToList();
-                var verb = affectedNames.Count > 1 ? "vont être" : "va être";
-                var question = $"Le club {club.Name} va être désassigné : {string.Join(", ", affectedNames)} {verb} sans club. Continuer ?";
-                if (!await JS.InvokeAsync<bool>("confirm", question)) return;
+                var verb = affectedNames.Count > 1 ? "se retrouveront" : "se retrouvera";
+                if (!await Confirm.AskAsync(new ConfirmRequest
+                {
+                    Title = "Désassigner le club",
+                    Message = $"{string.Join(", ", affectedNames)} {verb} sans club après cette opération.",
+                    ConfirmLabel = "Désassigner",
+                    Tone = ConfirmTone.Warning,
+                    Icon = ConfirmIcon.Star,
+                    SubjectName = club.Name,
+                    SubjectMeta = $"{affectedNames.Count} joueur{(affectedNames.Count > 1 ? "s" : "")} concerné{(affectedNames.Count > 1 ? "s" : "")}",
+                    SubjectImagePath = club.LogoPath
+                })) return;
 
                 Db.PlayerClubs.RemoveRange(memberships);
             }
             else
             {
-                if (!await JS.InvokeAsync<bool>("confirm", $"Retirer {club.Name} des clubs préférés ?")) return;
+                if (!await Confirm.AskAsync(new ConfirmRequest
+                {
+                    Title = "Retirer des préférés",
+                    Message = "Ce club ne sera plus proposé en premier lors de la création d'une saison.",
+                    ConfirmLabel = "Retirer",
+                    Tone = ConfirmTone.Warning,
+                    Icon = ConfirmIcon.Star,
+                    SubjectName = club.Name,
+                    SubjectImagePath = club.LogoPath
+                })) return;
             }
 
             var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == currentUserId);
@@ -315,7 +333,14 @@
         }
         else
         {
-            if (!await JS.InvokeAsync<bool>("confirm", $"Marquer le club {club.Name} en préféré ?")) return;
+            if (!await Confirm.AskAsync(new ConfirmRequest
+            {
+                Title = "Club en préféré",
+                Message = "Ce club sera proposé en premier lors de la création d'une saison.",
+                Icon = ConfirmIcon.Star,
+                SubjectName = club.Name,
+                SubjectImagePath = club.LogoPath
+            })) return;
 
             var entity = await Db.Users.Include(u => u.FavoriteClubs).FirstAsync(u => u.Id == currentUserId);
             var clubEntity = await Db.Clubs.FindAsync(club.Id);
