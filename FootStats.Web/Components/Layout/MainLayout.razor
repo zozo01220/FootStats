@@ -10,23 +10,32 @@
         <NavMenu />
         <AuthorizeView>
             <Authorized>
+                <NavLink href="statistiques" class="topbar-stats-link">
+                    <svg viewBox="0 0 24 24" class="icon"><path d="M3 3v18h18"></path><path d="M7 15l4-5 3 3 5-6"></path></svg>
+                    <span>Statistiques</span>
+                </NavLink>
                 <details class="user-menu">
                     <summary class="btn-logout" aria-label="@FullName(context.User)">
                         <span class="avatar">@Initials(context.User)</span>
-                        <span class="btn-logout-text">
-                            <span class="btn-logout-label">@FullName(context.User)</span>
-                            <span class="btn-logout-role">@RoleLabel(context.User)</span>
-                        </span>
                         <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
                     </summary>
                     <div class="user-menu-panel">
                         <div class="user-menu-header">
-                            <span class="btn-logout-label">@FullName(context.User)</span>
-                            <span class="btn-logout-role">@RoleLabel(context.User)</span>
+                            <span class="avatar">@Initials(context.User)</span>
+                            <div class="user-menu-header-id">
+                                <span class="btn-logout-label">@FullName(context.User)</span>
+                                <span class="role-pill @RoleCssClass(context.User)">
+                                    <svg viewBox="0 0 24 24" class="icon">@((MarkupString)RoleIconPath(context.User))</svg>
+                                    @RoleLabel(context.User)
+                                </span>
+                            </div>
                         </div>
+                        <div class="user-menu-divider"></div>
                         <form method="post" action="/account/logout">
                             <button type="submit" class="user-menu-logout">
-                                <svg viewBox="0 0 24 24" class="icon"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path></svg>
+                                <span class="user-menu-logout-icon">
+                                    <svg viewBox="0 0 24 24" class="icon"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path></svg>
+                                </span>
                                 Se déconnecter
                             </button>
                         </form>
@@ -129,4 +138,37 @@
             }
             : "";
     }
+
+    /// <summary>Couleur de la pastille de rôle dans le menu compte : une teinte par niveau d'accès,
+    /// cohérente avec les autres usages de ces couleurs dans l'appli (or = admin, bleu ardoise = système).</summary>
+    private static string RoleCssClass(ClaimsPrincipal principal)
+    {
+        var role = principal.FindFirst(ClaimTypes.Role)?.Value;
+        return Enum.TryParse<UserRole>(role, out var parsed)
+            ? parsed switch
+            {
+                UserRole.SuperAdmin => "role-superadmin",
+                UserRole.Admin => "role-admin",
+                UserRole.User => "role-user",
+                UserRole.Consultant => "role-consultant",
+                _ => "role-user"
+            }
+            : "role-user";
+    }
+
+    private static string RoleIconPath(ClaimsPrincipal principal)
+    {
+        var role = principal.FindFirst(ClaimTypes.Role)?.Value;
+        if (!Enum.TryParse<UserRole>(role, out var parsed)) return PersonIconPath;
+        return parsed switch
+        {
+            UserRole.SuperAdmin or UserRole.Admin => StarIconPath,
+            UserRole.Consultant => EyeIconPath,
+            _ => PersonIconPath
+        };
+    }
+
+    private const string StarIconPath = "<path d=\"M12 2l3 6 6 1-4.5 4 1 6L12 16l-5.5 3 1-6L3 9l6-1z\"></path>";
+    private const string PersonIconPath = "<circle cx=\"12\" cy=\"8\" r=\"4\"></circle><path d=\"M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8\"></path>";
+    private const string EyeIconPath = "<path d=\"M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z\"></path><circle cx=\"12\" cy=\"12\" r=\"3\"></circle>";
 }

@@ -4,9 +4,6 @@ public class MatchRecord
 {
     public int Id { get; set; }
 
-    /// <summary>Numéro d'équipe dans laquelle le joueur a évolué pour ce match (1 à 5).</summary>
-    public int TeamNumber { get; set; }
-
     public string? Opponent { get; set; }
 
     public int PlayerGoals { get; set; }

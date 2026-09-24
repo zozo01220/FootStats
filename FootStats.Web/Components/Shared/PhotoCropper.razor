@@ -1,0 +1,166 @@
+@* Sélection + recadrage circulaire d'une photo de joueur (visage centré dans le badge). Le pan/zoom se fait
+   entièrement en JS (footstats.cropper, site.js) ; Blazor n'intervient qu'au choix du fichier et à la validation,
+   où le canvas recadré est exporté en PNG et enregistré directement sur disque (le composant retourne un chemin
+   de fichier prêt à l'emploi, pas des octets). *@
+@implements IDisposable
+@inject IJSRuntime JS
+@inject UploadsPathProvider Uploads
+
+<div class="photo-cropper">
+    <div class="photo-cropper-stage" hidden="@(!isCropping)">
+        <div class="photo-cropper-canvas-wrap" @ref="wrapRef">
+            <canvas @ref="canvasRef" width="480" height="480"></canvas>
+            <div class="photo-cropper-mask"></div>
+            <div class="photo-cropper-ring"></div>
+        </div>
+
+        <div class="photo-cropper-hint">
+            <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3"></path><path d="M9 5l3-3 3 3"></path><path d="M15 19l3 3 3-3"></path><path d="M19 9l3 3-3 3"></path><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+            Glissez pour repositionner le visage
+        </div>
+
+        <div class="photo-cropper-zoom-row">
+            <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"></circle><line x1="21" y1="21" x2="15" y2="15"></line></svg>
+            <input type="range" min="100" max="300" value="140" @ref="zoomRef" />
+            <svg viewBox="0 0 24 24" class="icon" fill="none" stroke="currentColor" stroke-width="2"><circle cx="10" cy="10" r="7"></circle><line x1="7" y1="10" x2="13" y2="10"></line><line x1="10" y1="7" x2="10" y2="13"></line><line x1="21" y1="21" x2="15" y2="15"></line></svg>
+        </div>
+
+        @if (cropError is not null)
+        {
+            <p class="empty-note" style="color: var(--danger); padding: 0;">@cropError</p>
+        }
+
+        <div class="photo-cropper-actions">
+            <button type="button" class="btn btn-outline" @onclick="CancelCrop" disabled="@isSaving">Annuler</button>
+            <button type="button" class="btn btn-primary" @onclick="ValidateCrop" disabled="@isSaving">@(isSaving ? "Enregistrement..." : "Valider le cadrage")</button>
+        </div>
+    </div>
+
+    <div hidden="@isCropping">
+        @{
+            var displayPath = pendingPhotoPath ?? (!removed ? CurrentPhotoPath : null);
+        }
+        @if (!string.IsNullOrEmpty(displayPath))
+        {
+            <div class="current-photo">
+                <img class="preview-thumb round" src="@displayPath" alt="Photo" />
+                <span>@(pendingPhotoPath is not null ? "Nouvelle photo" : "Photo actuelle")</span>
+                <button type="button" class="btn-danger-outline btn-recrop" @onclick="StartRecrop">Recadrer</button>
+                <button type="button" class="btn-danger-outline" @onclick="RemovePhoto">Enlever</button>
+            </div>
+        }
+        <label class="file-picker-zone">
+            <input type="file" accept="image/*" @ref="fileInputRef" class="file-picker-input" />
+            <span class="file-picker-icon">
+                <svg viewBox="0 0 24 24" class="icon"><path d="M12 16V4M7 9l5-5 5 5"></path><path d="M4 20h16"></path></svg>
+            </span>
+            <span class="file-picker-copy">
+                <span class="file-picker-title">@(string.IsNullOrEmpty(displayPath) ? "Glissez une photo ici" : "Changer d'image")</span>
+                <span class="file-picker-hint">Le cadrage se fait à l'étape suivante</span>
+            </span>
+            <span class="btn file-picker-browse">Parcourir</span>
+        </label>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string? CurrentPhotoPath { get; set; }
+    [Parameter] public string Subfolder { get; set; } = "players";
+    [Parameter] public EventCallback<string> OnPhotoSaved { get; set; }
+    [Parameter] public EventCallback OnPhotoRemoved { get; set; }
+
+    private ElementReference wrapRef;
+    private ElementReference canvasRef;
+    private ElementReference zoomRef;
+    private ElementReference fileInputRef;
+
+    private bool isCropping;
+    private bool isSaving;
+    private bool removed;
+    private bool pendingLoadCurrent;
+    private string? pendingPhotoPath;
+    private string? cropError;
+
+    private DotNetObjectReference<PhotoCropper>? selfRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("footstats.cropper.bindFileInput", fileInputRef, canvasRef, selfRef);
+            await JS.InvokeVoidAsync("footstats.cropper.bindZoomSlider", zoomRef, canvasRef);
+            await JS.InvokeVoidAsync("footstats.cropper.bindDrag", wrapRef, canvasRef);
+        }
+
+        if (pendingLoadCurrent)
+        {
+            pendingLoadCurrent = false;
+            var url = pendingPhotoPath ?? CurrentPhotoPath;
+            if (!string.IsNullOrEmpty(url))
+            {
+                await JS.InvokeVoidAsync("footstats.cropper.loadFromUrl", canvasRef, url);
+            }
+        }
+    }
+
+    [JSInvokable]
+    public void OnImageReady()
+    {
+        isCropping = true;
+        cropError = null;
+        StateHasChanged();
+    }
+
+    private void StartRecrop()
+    {
+        isCropping = true;
+        pendingLoadCurrent = true;
+        StateHasChanged();
+    }
+
+    private void CancelCrop()
+    {
+        isCropping = false;
+        StateHasChanged();
+    }
+
+    private async Task ValidateCrop()
+    {
+        isSaving = true;
+        cropError = null;
+        StateHasChanged();
+        try
+        {
+            var streamRef = await JS.InvokeAsync<IJSStreamReference>("footstats.cropper.exportCrop", canvasRef);
+            await using var stream = await streamRef.OpenReadStreamAsync(maxAllowedSize: 10 * 1024 * 1024);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+
+            var path = await FileStorage.SavePhotoBytesAsync(ms.ToArray(), ".png", Uploads.Root, Subfolder);
+            pendingPhotoPath = path;
+            removed = false;
+            isCropping = false;
+            await OnPhotoSaved.InvokeAsync(path);
+        }
+        catch (JSException)
+        {
+            cropError = "Le recadrage n'a pas pu être enregistré. Réessaie.";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemovePhoto()
+    {
+        pendingPhotoPath = null;
+        removed = true;
+        StateHasChanged();
+        await OnPhotoRemoved.InvokeAsync();
+    }
+
+    public void Dispose() => selfRef?.Dispose();
+}

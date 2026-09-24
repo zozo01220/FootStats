@@ -33,12 +33,7 @@ public class StatsService(AppDbContext db)
                 MatchCount = tMatches.Count,
                 PlayerGoals = tMatches.Sum(m => m.PlayerGoals),
                 TeamGoalsFor = tMatches.Sum(m => m.TeamGoalsFor),
-                TeamNumber = tMatches
-                    .GroupBy(m => m.TeamNumber)
-                    .OrderByDescending(g => g.Count())
-                    .ThenBy(g => g.Key)
-                    .Select(g => (int?)g.Key)
-                    .FirstOrDefault()
+                TeamNumber = t.TeamNumber
             };
         }).ToList();
 
@@ -139,7 +134,7 @@ public class StatsService(AppDbContext db)
             .ToList();
 
         var mainTeam = scopedMatches
-            .GroupBy(m => m.TeamNumber)
+            .GroupBy(m => m.Tournament!.TeamNumber)
             .OrderByDescending(g => g.Count())
             .ThenBy(g => g.Key)
             .FirstOrDefault();

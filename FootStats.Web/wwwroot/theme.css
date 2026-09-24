@@ -61,24 +61,38 @@ button, input, select { font-family: var(--font-body); }
 .topbar nav a .icon { display: none; }
 .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--gold); color: var(--pitch-dark); display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 15px; flex-shrink: 0; }
 
+/* Accès "Statistiques" du bandeau mobile : caché en PC, où la page a déjà son lien dans .topbar nav
+   (voir .nav-desktop-only et la media query mobile plus bas pour l'inverse). */
+.topbar-stats-link { display: none; order: 3; }
+
 .user-menu { position: relative; flex-shrink: 0; order: 4; margin-left: auto; }
 .user-menu summary { list-style: none; cursor: pointer; }
 .user-menu summary::-webkit-details-marker { display: none; }
-.btn-logout { display: flex; align-items: center; gap: 10px; background: transparent; border: 1px solid rgba(255,255,255,0.28); border-radius: 999px; padding: 4px 16px 4px 4px; color: rgba(255,255,255,0.92); font-weight: 600; font-size: 14px; }
+/* Déclencheur réduit à l'avatar + chevron : nom et rôle vivent dans le panneau (user-menu-header),
+   pour rester lisible même quand ce bouton partage sa ligne avec .topbar-stats-link en mobile. */
+.btn-logout { display: flex; align-items: center; gap: 4px; background: transparent; border: 1px solid rgba(255,255,255,0.28); border-radius: 999px; padding: 3px 8px 3px 3px; color: rgba(255,255,255,0.92); }
 .btn-logout:hover { background: rgba(255,255,255,0.08); }
-.btn-logout .avatar { width: 30px; height: 30px; font-size: 12px; }
-.btn-logout-text { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
-.btn-logout-role { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(255,255,255,0.55); }
-.btn-logout .chevron { width: 16px; height: 16px; margin-left: 2px; transition: transform 0.15s ease; }
+.btn-logout .avatar { width: 28px; height: 28px; font-size: 12px; }
+.btn-logout .chevron { width: 16px; height: 16px; transition: transform 0.15s ease; }
 .user-menu[open] .btn-logout .chevron { transform: rotate(180deg); }
 
-.user-menu-panel { position: absolute; top: calc(100% + 10px); right: 0; min-width: 210px; background: var(--paper-alt); border: 1px solid var(--line); border-radius: 12px; padding: 8px; box-shadow: 0 16px 32px -12px rgba(4,20,11,0.45); z-index: 50; }
-.user-menu-header { display: none; flex-direction: column; gap: 2px; padding: 8px 12px 10px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
-.user-menu-header .btn-logout-label { color: var(--ink); font-size: 13.5px; font-weight: 700; }
-.user-menu-header .btn-logout-role { color: var(--muted); }
-.user-menu-logout { display: flex; align-items: center; gap: 10px; width: 100%; background: transparent; border: none; border-radius: 8px; padding: 10px 12px; color: var(--danger); font-weight: 600; font-size: 14px; cursor: pointer; }
+.user-menu-panel { position: absolute; top: calc(100% + 10px); right: 0; width: 250px; background: var(--paper-alt); border: 1px solid var(--line); border-radius: 14px; padding: 10px; box-shadow: 0 20px 40px -14px rgba(4,20,11,0.5); z-index: 50; }
+.user-menu-header { display: flex; align-items: center; gap: 12px; padding: 8px 8px 14px; }
+.user-menu-header .avatar { width: 44px; height: 44px; font-size: 18px; }
+.user-menu-header-id { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.btn-logout-label { font-size: 14.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.role-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 9px; border-radius: 999px; width: fit-content; }
+.role-pill .icon { width: 11px; height: 11px; stroke-width: 2.4; }
+.role-pill.role-superadmin { background: rgba(43,58,85,0.14); color: var(--system-dark); }
+.role-pill.role-admin { background: rgba(232,179,48,0.18); color: var(--gold-dark); }
+.role-pill.role-user { background: rgba(30,86,49,0.12); color: var(--pitch); }
+.role-pill.role-consultant { background: rgba(114,111,102,0.14); color: var(--muted); }
+
+.user-menu-divider { height: 1px; background: var(--line); margin: 2px 4px 6px; }
+.user-menu-logout { display: flex; align-items: center; gap: 11px; width: 100%; background: transparent; border: none; border-radius: 9px; padding: 9px 8px; color: var(--danger); font-weight: 600; font-size: 13.5px; cursor: pointer; }
 .user-menu-logout:hover { background: rgba(179,67,43,0.08); }
-.user-menu-logout .icon { color: var(--danger); }
+.user-menu-logout-icon { width: 30px; height: 30px; border-radius: 50%; background: rgba(179,67,43,0.1); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.user-menu-logout-icon .icon { color: var(--danger); width: 15px; height: 15px; }
 
 /* Buttons */
 .btn { font-family: var(--font-body); font-weight: 600; font-size: 14px; border-radius: 9px; padding: 11px 22px; border: 1px solid transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
@@ -91,6 +105,12 @@ button, input, select { font-family: var(--font-body); }
 .btn-revoke { background: #fff; color: var(--danger); border: 1.5px solid var(--danger); box-shadow: 0 1px 2px rgba(179,67,43,0.08); }
 .btn-revoke:hover { background: var(--danger); color: #fff; }
 .btn-revoke:hover .icon { color: #fff; }
+
+/* Bouton "Partager" (fiche Saison, Utilisateurs) : vert plein plutôt que l'outline blanc de .btn-secondary,
+   pour ressortir comme l'action à forte valeur sur la carte/le hero. */
+.btn-secondary.btn-share-green { background: var(--pitch); color: #fff; border-color: var(--pitch); }
+.btn-secondary.btn-share-green .icon { color: #fff; }
+.btn-secondary.btn-share-green:hover { background: var(--pitch-dark); border-color: var(--pitch-dark); color: #fff; }
 
 .page-hero-with-action { display: flex; flex-direction: column; gap: 12px; }
 .page-hero-with-action .page-hero { flex: 1; }
@@ -492,7 +512,42 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 
 .current-photo { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
 .current-photo .btn-danger-outline { margin-left: auto; }
+.current-photo .btn-recrop { margin-left: 8px; }
 .preview-thumb { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; border: 1px solid var(--line); }
+.preview-thumb.round { border-radius: 50%; }
+
+/* Recadrage circulaire d'une photo (PhotoCropper.razor) : cercle de cadrage + zoom, cf. footstats.cropper en JS. */
+.photo-cropper-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.photo-cropper-canvas-wrap {
+  position: relative;
+  width: 220px; height: 220px; max-width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(45deg, rgba(0,0,0,0.07) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.07) 75%),
+    linear-gradient(45deg, rgba(0,0,0,0.07) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.07) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+  touch-action: none;
+  cursor: grab;
+}
+.photo-cropper-canvas-wrap.dragging { cursor: grabbing; }
+.photo-cropper-canvas-wrap canvas { display: block; width: 100%; height: 100%; }
+.photo-cropper-mask {
+  position: absolute; inset: 0; margin: 18px;
+  pointer-events: none;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2000px rgba(15,27,24,0.55);
+}
+.photo-cropper-ring { position: absolute; inset: 18px; border-radius: 50%; border: 2px solid var(--gold); pointer-events: none; }
+.photo-cropper-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); text-align: center; }
+.photo-cropper-hint .icon { width: 14px; height: 14px; flex-shrink: 0; }
+.photo-cropper-zoom-row { width: 100%; display: flex; align-items: center; gap: 10px; }
+.photo-cropper-zoom-row .icon { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+.photo-cropper-zoom-row input[type="range"] { flex: 1; accent-color: var(--gold-dark); height: 4px; }
+.photo-cropper-actions { display: flex; gap: 10px; width: 100%; }
+.photo-cropper-actions .btn { flex: 1; }
 
 /* Interrupteur style iOS */
 .ios-toggle-group { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
@@ -604,7 +659,8 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .dash-player-picker { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px 4px 4px; }
 .dash-player-picker select { border: none; background: transparent; font-family: var(--font-body); font-weight: 700; font-size: 13px; color: var(--ink); cursor: pointer; }
 .dash-player-picker select:focus { outline: none; }
-.dash-player-avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--pitch-light), var(--pitch-dark)); color: #fff; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 11px; flex-shrink: 0; }
+.dash-player-avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--pitch-light), var(--pitch-dark)); color: #fff; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 11px; flex-shrink: 0; overflow: hidden; }
+.dash-player-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
 .seg { display: inline-flex; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; }
 .seg button { border: none; background: transparent; font-family: var(--font-body); font-weight: 600; font-size: 12.5px; color: var(--muted); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
@@ -856,6 +912,12 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
   .topbar nav a { flex-direction: column; gap: 3px; padding: 6px 4px; font-size: 10.5px; border-radius: 10px; flex: 1; text-align: center; }
   .topbar nav a .icon { display: inline-block; width: 22px; height: 22px; }
   .topbar nav a span { line-height: 1.1; }
+  /* La barre du bas (nav ci-dessus, repositionnée en fixed) reste à 5 entrées : Statistiques n'y apparaît
+     pas, elle vit dans son propre bouton du bandeau du haut (topbar-stats-link ci-dessous) pour ne pas
+     surcharger une barre déjà pleine. */
+  .topbar nav a.nav-desktop-only { display: none; }
+  .topbar-stats-link { display: flex; align-items: center; gap: 6px; background: rgba(232,179,48,0.16); border: 1.5px dashed var(--gold); border-radius: 999px; padding: 6px 13px 6px 9px; color: var(--gold); font-weight: 700; font-size: 12.5px; flex-shrink: 0; }
+  .topbar-stats-link .icon { width: 16px; height: 16px; }
   .user-menu-panel { right: 0; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .page-title { font-size: 28px; }
@@ -1173,15 +1235,15 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; display: inline-block; }
 .event-dot.type-tournoi { background: var(--gold-dark); }
 .event-dot.type-plateau { background: var(--pitch); }
-.event-dot.type-training { background: var(--muted); }
+.event-dot.type-training { background: var(--sky-dark); }
 
 .event-tint.type-tournoi { background: rgba(232,179,48,0.16); color: var(--gold-dark); }
 .event-tint.type-plateau { background: rgba(30,86,49,0.12); color: var(--pitch); }
-.event-tint.type-training { background: rgba(114,111,102,0.14); color: var(--muted); }
+.event-tint.type-training { background: rgba(74,144,184,0.14); color: var(--sky-dark); }
 
 .event-stripe.type-tournoi { background: var(--gold-dark); }
 .event-stripe.type-plateau { background: var(--pitch); }
-.event-stripe.type-training { background: var(--muted); }
+.event-stripe.type-training { background: var(--sky-dark); }
 
 /* Calendrier — vue Mois */
 .cal-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
@@ -1247,10 +1309,20 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .event-cancelled .ecm-title,
 .event-cancelled .ecm-place,
 .event-cancelled .cal-chip-label,
-.event-cancelled .week-item .title,
-.event-cancelled .week-item .meta { text-decoration: line-through; text-decoration-thickness: 1.5px; }
+.week-item.event-cancelled .title,
+.week-item.event-cancelled .meta { text-decoration: line-through; text-decoration-thickness: 1.5px; }
 
 .event-cancel-badge { display: inline-flex; align-items: center; margin-top: 4px; font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.03em; }
+
+/* Pastilles du calendrier (mois/semaine) uniquement : fond plein une fois annulées (voir plus bas), donc
+   texte blanc pour rester lisible — sauf la catégorie, qui reste noire quel que soit le motif. Ne touche
+   pas agenda-title/ecm-title (fond clair de la liste agenda / carte mobile, texte sombre déjà lisible).
+   .week-item porte la classe .event-cancelled sur lui-même (pas un ancêtre séparé) : le sélecteur doit
+   donc les combiner sur un même élément, pas les enchaîner en descendants. */
+.event-cancelled .cal-chip-label,
+.week-item.event-cancelled .title,
+.week-item.event-cancelled .meta { color: #fff; }
+.event-cancelled .cal-chip-cat { color: var(--ink); opacity: 1; }
 
 /* Ligne agenda (desktop) : le motif d'annulation / le statut de présence se place à droite de la ligne,
    comme dernier élément flex avant le bouton d'action, plutôt que sous le titre. */
@@ -1273,35 +1345,66 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .event-cancelled.reason-annule .card-stripe,
 .event-cancelled.reason-annule.week-item,
 .event-cancelled.reason-annule .event-dot { background: #C46A1F; }
-.event-cancelled.reason-annule.cal-chip { background: rgba(196,106,31,0.16); }
+.event-cancelled.reason-annule.cal-chip { background: #C46A1F; }
 .event-cancelled.reason-annule .agenda-title,
-.event-cancelled.reason-annule .ecm-title,
-.event-cancelled.reason-annule .cal-chip-label,
-.event-cancelled.reason-annule .week-item .title { color: #8A4A15; }
-.event-cancelled.reason-annule .event-cancel-badge { background: rgba(196,106,31,0.22); color: #8A4A15; }
+.event-cancelled.reason-annule .ecm-title { color: #8A4A15; }
+.event-cancelled.reason-annule .event-cancel-badge { background: #C46A1F; color: #fff; }
 
 .event-cancelled.reason-treve { background: var(--paper); opacity: 0.6; }
 .event-cancelled.reason-treve .agenda-stripe,
 .event-cancelled.reason-treve .card-stripe,
 .event-cancelled.reason-treve.week-item,
 .event-cancelled.reason-treve .event-dot { background: #B4B2A9; }
-.event-cancelled.reason-treve.cal-chip { background: #E2DFD3; }
-.event-cancelled.reason-treve .event-cancel-badge { background: #D3D1C7; color: #5F5E5A; }
+.event-cancelled.reason-treve.cal-chip { background: #B4B2A9; }
+.event-cancelled.reason-treve .event-cancel-badge { background: #B4B2A9; color: #fff; }
 
 .event-cancelled.reason-malade { background: #EAE8E0; opacity: 0.8; }
 .event-cancelled.reason-malade .agenda-stripe,
 .event-cancelled.reason-malade .card-stripe,
 .event-cancelled.reason-malade.week-item,
 .event-cancelled.reason-malade .event-dot { background: #444441; }
-.event-cancelled.reason-malade.cal-chip { background: #D3D1C7; }
-.event-cancelled.reason-malade .event-cancel-badge { background: #B4B2A9; color: #2C2C2A; }
+.event-cancelled.reason-malade.cal-chip { background: #444441; }
+.event-cancelled.reason-malade .event-cancel-badge { background: #444441; color: #fff; }
 
 /* Calendrier — vue Agenda */
-.agenda-group { padding: 14px 22px 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+/* Regroupement de l'agenda : un bandeau plein pour les mois (repère calendaire fort, avec le nombre
+   d'événements), un séparateur à pastille plus discret pour les repères relatifs (aujourd'hui / cette
+   semaine / semaine prochaine), et un fil vertical qui relie les pastilles-date d'un même groupe pour que
+   l'œil perçoive la continuité — ou la coupure à un changement de mois — sans avoir à relire les titres. */
+.agenda-month-band {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 20px 22px 10px; padding: 10px 18px; border-radius: 10px;
+  background: linear-gradient(120deg, var(--pitch-light), var(--pitch-dark)); color: #fff;
+  box-shadow: 0 8px 16px -10px rgba(15,61,36,0.5);
+}
+.card > .agenda-month-band:first-child { margin-top: 14px; }
+.agenda-month-band .name { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
+.agenda-month-band .count { font-size: 10.5px; font-weight: 700; background: rgba(255,255,255,0.18); padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+
+.agenda-week-divider { display: flex; align-items: center; gap: 10px; margin: 18px 22px 8px; }
+.card > .agenda-week-divider:first-child { margin-top: 14px; }
+.agenda-week-divider .line { flex: 1; height: 1px; background: var(--line); }
+.agenda-week-divider .pill { font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; padding: 5px 12px; border-radius: 999px; white-space: nowrap; }
+.agenda-week-divider.rail-today .pill { background: var(--gold); color: var(--pitch-dark); }
+.agenda-week-divider.rail-today .line { background: rgba(232,179,48,0.5); }
+.agenda-week-divider.rail-thisweek .pill { background: rgba(30,86,49,0.12); color: var(--pitch-dark); border: 1px solid rgba(30,86,49,0.25); }
+.agenda-week-divider.rail-nextweek .pill { background: var(--paper-alt); color: var(--muted); border: 1px solid var(--line); }
+
+/* Fil temporel : une ligne fine derrière les pastilles-date d'un même groupe, couverte par leur fond opaque
+   (d'où le z-index sur .agenda-date), interrompue quand le groupe ne compte qu'un seul événement. */
+.agenda-rail { position: relative; }
+.agenda-rail::before { content: ""; position: absolute; left: 48px; top: 20px; bottom: 20px; width: 2px; background: var(--line); }
+.agenda-rail.rail-today::before { background: rgba(232,179,48,0.55); }
+.agenda-rail.rail-thisweek::before { background: rgba(30,86,49,0.22); }
+.agenda-rail.rail-single::before { display: none; }
+@media (max-width: 640px) {
+  .agenda-rail::before { display: none; }
+}
+
 .agenda-row { display: flex; align-items: center; gap: 18px; padding: 14px 22px; border-bottom: 1px solid var(--line); cursor: pointer; background: none; border-left: none; border-right: none; border-top: none; width: 100%; text-align: left; font-family: var(--font-body); }
 .agenda-row:last-child { border-bottom: none; }
 .agenda-row:hover { background: rgba(30,86,49,0.04); }
-.agenda-date { width: 52px; height: 52px; border-radius: 12px; background: var(--paper); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; }
+.agenda-date { width: 52px; height: 52px; border-radius: 12px; background: var(--paper); border: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; flex-shrink: 0; position: relative; z-index: 1; }
 .agenda-date .day { font-family: var(--font-display); font-size: 20px; color: var(--ink); line-height: 1; }
 .agenda-date .month { font-size: 9px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
 .agenda-date.today { background: rgba(232,179,48,0.14); border-color: var(--gold); }
@@ -1322,7 +1425,11 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .day-toggle-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .day-toggle { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-alt); color: var(--muted); font-size: 12.5px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; font-family: var(--font-body); }
 .day-toggle.on { background: var(--pitch); border-color: var(--pitch); color: #fff; }
-.training-rule-row { display: flex; align-items: center; gap: 18px; padding: 16px 22px; border-bottom: 1px solid var(--line); }
+.training-rule-row { display: flex; flex-direction: column; gap: 7px; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+.training-rule-line1 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.training-rule-line2 { font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.training-rule-line3 { font-size: 12.5px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.training-rule-line3 .icon { width: 13px; height: 13px; flex-shrink: 0; }
 
 /* Sélecteur de motif d'annulation d'une séance d'entraînement (modale édition rapide) */
 .cancel-reason-box { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 4px 0 16px; background: var(--paper); }
@@ -1363,7 +1470,6 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
   .week-grid { grid-template-columns: 1fr; }
   .week-col { border-right: none; border-bottom: 1px solid var(--line); }
   .week-col:last-child { border-bottom: none; }
-  .training-rule-row { flex-wrap: wrap; }
 }
 
 /* Bouton "+" unique (fiche Saison) proposant Tournoi/Plateau/Concours/Entraînement : un seul FAB
@@ -1378,7 +1484,9 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .event-fab-menu-icon { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .event-fab-menu-icon.type-tournoi { background: rgba(232,179,48,0.18); color: var(--gold-dark); }
 .event-fab-menu-icon.type-plateau { background: rgba(30,86,49,0.12); color: var(--pitch); }
-.event-fab-menu-icon.type-training { background: rgba(114,111,102,0.14); color: var(--muted); }
+.event-fab-menu-icon.type-training { background: rgba(74,144,184,0.14); color: var(--sky-dark); }
+.event-fab-menu-label { display: flex; flex-direction: column; gap: 1px; text-align: left; }
+.event-fab-menu-sub { font-size: 11px; font-weight: 600; color: var(--muted); }
 
 @media (max-width: 640px) {
   .event-fab-wrap { right: 18px; bottom: calc(76px + env(safe-area-inset-bottom) + 12px); }

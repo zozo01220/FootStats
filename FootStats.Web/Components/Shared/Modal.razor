@@ -2,7 +2,7 @@
 
 @if (_isOpen)
 {
-    <div class="modal-backdrop" @onclick="Close">
+    <div class="modal-backdrop" style="z-index: @_zIndex;" @onclick="Close">
         <div class="modal-panel" @onclick:stopPropagation="true">
             <div class="modal-header">
                 <div class="modal-header-title">
@@ -28,11 +28,17 @@
     [Parameter] public RenderFragment? Subtitle { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
+    // Compteur partagé par toutes les modales : celle ouverte le plus récemment passe devant les autres,
+    // même quand elle est déclarée plus tôt dans le DOM (ex. modale d'édition ouverte depuis une modale
+    // de gestion — sans ça, les deux .modal-backdrop ont le même z-index et l'ordre du DOM tranche).
+    private static int _zIndexCounter = 50;
     private bool _isOpen;
+    private int _zIndex = 50;
 
     public void Open()
     {
         _isOpen = true;
+        _zIndex = Interlocked.Increment(ref _zIndexCounter);
         StateHasChanged();
     }
 

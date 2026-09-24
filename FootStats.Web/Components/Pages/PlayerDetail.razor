@@ -3,7 +3,6 @@
 @rendermode InteractiveServer
 @inject AppDbContext Db
 @inject NavigationManager Navigation
-@inject UploadsPathProvider Uploads
 @inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
@@ -166,19 +165,7 @@ else
             </div>
             <div class="field" style="margin-bottom: 16px;">
                 <label>Photo</label>
-                @if (!removePhoto && !string.IsNullOrEmpty(player.PhotoPath))
-                {
-                    <div class="current-photo">
-                        <img class="preview-thumb" src="@player.PhotoPath" alt="Photo actuelle" />
-                        <span>Photo actuelle</span>
-                        <button type="button" class="btn-danger-outline" @onclick="() => removePhoto = true">Enlever</button>
-                    </div>
-                }
-                @if (removePhoto)
-                {
-                    <p class="empty-note" style="padding: 0 0 8px;">La photo sera supprimée à l'enregistrement.</p>
-                }
-                <FilePicker Accept="image/*" Title="Glissez une photo ici" Hint="PNG, JPG..." OnFileSelected="OnEditPhotoSelected" />
+                <PhotoCropper CurrentPhotoPath="@player.PhotoPath" OnPhotoSaved="p => editPhotoPath = p" OnPhotoRemoved="() => photoRemoved = true" />
             </div>
             <button class="btn btn-primary" type="submit">Enregistrer</button>
         </EditForm>
@@ -196,8 +183,8 @@ else
     private List<Season> seasons = [];
     private PlayerEditForm editForm = new();
     private Modal? editModal;
-    private IBrowserFile? editPhoto;
-    private bool removePhoto;
+    private string? editPhotoPath;
+    private bool photoRemoved;
     private bool canManage;
     private bool notFound;
 
@@ -300,8 +287,8 @@ else
             IsCaptain = player.IsCaptain,
             CurrentClubIds = activeClubIds
         };
-        editPhoto = null;
-        removePhoto = false;
+        editPhotoPath = null;
+        photoRemoved = false;
         editModal?.Open();
     }
 
@@ -309,12 +296,6 @@ else
     {
         if (isChecked) set.Add(id);
         else set.Remove(id);
-    }
-
-    private void OnEditPhotoSelected(IBrowserFile file)
-    {
-        editPhoto = file;
-        removePhoto = false;
     }
 
     private async Task SaveEdit()
@@ -355,11 +336,11 @@ else
         entity.PreferredNumber = editForm.PreferredNumber;
         entity.IsCaptain = editForm.IsCaptain;
 
-        if (editPhoto is not null)
+        if (editPhotoPath is not null)
         {
-            entity.PhotoPath = await FileStorage.SavePhotoAsync(editPhoto, Uploads.Root, "players");
+            entity.PhotoPath = editPhotoPath;
         }
-        else if (removePhoto)
+        else if (photoRemoved)
         {
             entity.PhotoPath = null;
         }

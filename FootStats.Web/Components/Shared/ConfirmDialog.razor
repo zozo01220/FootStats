@@ -4,7 +4,10 @@
 
 @if (Confirm.Current is { } request)
 {
-    <div class="modal-backdrop" @onclick="Cancel">
+    @* z-index fixe et volontairement élevé : Modal.razor incrémente le sien à chaque ouverture pour que la
+       modale la plus récente passe devant les autres, donc la confirmation (qui doit toujours dominer,
+       même ouverte depuis une modale déjà ouverte) a besoin d'une valeur hors de cette plage. *@
+    <div class="modal-backdrop" style="z-index: 9999;" @onclick="Cancel">
         <div class="confirm-panel" @onclick:stopPropagation="true">
             <div class="confirm-grip"><span></span></div>
 

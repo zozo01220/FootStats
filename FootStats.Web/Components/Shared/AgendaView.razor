@@ -43,7 +43,21 @@
     {
         @foreach (var group in AgendaGroups())
         {
-            <div class="agenda-group">@group.Label</div>
+            @if (group.Kind == AgendaGroupKind.Month)
+            {
+                <div class="agenda-month-band">
+                    <span class="name">@group.Label</span>
+                    <span class="count">@group.Items.Count @(group.Items.Count > 1 ? "événements" : "événement")</span>
+                </div>
+            }
+            else
+            {
+                <div class="agenda-week-divider @GroupRailClass(group.Kind)">
+                    <span class="pill">@group.Label</span>
+                    <span class="line"></span>
+                </div>
+            }
+            <div class="agenda-rail @GroupRailClass(group.Kind) @(group.Items.Count <= 1 ? "rail-single" : "")">
             @foreach (var e in group.Items)
             {
                 <div class="agenda-row @CancelledClasses(e)" @onclick="() => GoToEvent(e)">
@@ -53,7 +67,13 @@
                     </div>
                     <div class="agenda-stripe event-stripe @TypeClass(e)"></div>
                     <div style="flex-grow: 1; min-width: 0;">
-                        <div class="agenda-title">@ChipLabel(e)</div>
+                        <div class="agenda-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            @ChipLabel(e)
+                            @if (e.TeamNumber is { } teamNumber)
+                            {
+                                <span class="pill" style="font-size: 10.5px; padding: 2px 9px;">Équipe @teamNumber</span>
+                            }
+                        </div>
                         <div class="agenda-meta">@TimeAndPlayer(e)</div>
                         <div class="agenda-club">
                             <span class="club-badge-mini">
@@ -110,6 +130,10 @@
                                         <img src="@e.ClubLogoPath" alt="" class="club-logo-mini" />
                                     }
                                 </div>
+                                @if (e.TeamNumber is { } mobileTeamNumber)
+                                {
+                                    <span class="pill" style="font-size: 10.5px; padding: 2px 9px; margin-top: 4px;">Équipe @mobileTeamNumber</span>
+                                }
                                 @if (e.IsCancelled && e.CancellationReason is { } mobileReason)
                                 {
                                     <span class="event-cancel-badge">@TrainingOccurrenceHelper.CancellationReasonLabel(mobileReason)</span>
@@ -145,6 +169,7 @@
                     </div>
                 </div>
             }
+            </div>
         }
     }
 </div>
@@ -271,6 +296,17 @@
 
     private enum CalendarFilterType { Tournoi, Plateau, Training }
 
+    private enum AgendaGroupKind { Today, ThisWeek, NextWeek, Month }
+    private record AgendaGroup(AgendaGroupKind Kind, string Label, List<CalendarEvent> Items);
+
+    private static string GroupRailClass(AgendaGroupKind kind) => kind switch
+    {
+        AgendaGroupKind.Today => "rail-today",
+        AgendaGroupKind.ThisWeek => "rail-thisweek",
+        AgendaGroupKind.NextWeek => "rail-nextweek",
+        _ => "rail-month"
+    };
+
     private DateOnly referenceDate = DateOnly.FromDateTime(DateTime.Today);
     private List<CalendarEvent> events = [];
 
@@ -351,30 +387,38 @@
 
     private string NavLabel() => $"À partir du {referenceDate:dd.MM.yyyy}";
 
-    private List<(string Label, List<CalendarEvent> Items)> AgendaGroups()
+    private List<AgendaGroup> AgendaGroups()
     {
-        var groups = new List<(string, List<CalendarEvent>)>();
+        var groups = new List<AgendaGroup>();
         var today = Today;
         var weekEnd = today.AddDays(7);
         var nextWeekEnd = today.AddDays(14);
 
         var filtered = FilteredEvents.ToList();
 
+        var earlier = filtered.Where(e => e.Date < today)
+            .GroupBy(e => (e.Date.Year, e.Date.Month))
+            .OrderBy(g => g.Key);
+        foreach (var g in earlier)
+        {
+            groups.Add(new(AgendaGroupKind.Month, $"{MonthName(g.Key.Month)} {g.Key.Year}", g.ToList()));
+        }
+
         var todayItems = filtered.Where(e => e.Date == today).ToList();
-        if (todayItems.Count > 0) groups.Add(("Aujourd'hui", todayItems));
+        if (todayItems.Count > 0) groups.Add(new(AgendaGroupKind.Today, "Aujourd'hui", todayItems));
 
         var thisWeek = filtered.Where(e => e.Date > today && e.Date <= weekEnd).ToList();
-        if (thisWeek.Count > 0) groups.Add(("Cette semaine", thisWeek));
+        if (thisWeek.Count > 0) groups.Add(new(AgendaGroupKind.ThisWeek, "Cette semaine", thisWeek));
 
         var nextWeek = filtered.Where(e => e.Date > weekEnd && e.Date <= nextWeekEnd).ToList();
-        if (nextWeek.Count > 0) groups.Add(("Semaine prochaine", nextWeek));
+        if (nextWeek.Count > 0) groups.Add(new(AgendaGroupKind.NextWeek, "Semaine prochaine", nextWeek));
 
         var later = filtered.Where(e => e.Date > nextWeekEnd)
             .GroupBy(e => (e.Date.Year, e.Date.Month))
             .OrderBy(g => g.Key);
         foreach (var g in later)
         {
-            groups.Add(($"{MonthName(g.Key.Month)} {g.Key.Year}", g.ToList()));
+            groups.Add(new(AgendaGroupKind.Month, $"{MonthName(g.Key.Month)} {g.Key.Year}", g.ToList()));
         }
 
         return groups;

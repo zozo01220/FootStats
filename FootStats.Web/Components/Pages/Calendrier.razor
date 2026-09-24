@@ -10,7 +10,16 @@
 <PageTitle>Calendrier - FootStats</PageTitle>
 
 <div class="container">
-    <PageHero Eyebrow="Club & famille" Title="Calendrier" Subtitle="Tous les matchs, tournois et entraînements, en un coup d'œil." />
+    <div class="page-hero-with-action">
+        <PageHero Eyebrow="Club & famille" Title="Calendrier" Subtitle="Tous les matchs, tournois et entraînements, en un coup d'œil." />
+        @if (visiblePlayers.Count > 0)
+        {
+            <button class="btn btn-secondary btn-share-compact" type="button" @onclick="OpenManageTrainings">
+                <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
+                Gérer entraînements
+            </button>
+        }
+    </div>
 
     @if (visiblePlayers.Count == 0)
     {
@@ -18,64 +27,6 @@
     }
     else
     {
-        <div class="card">
-            <div class="section-title" style="padding: 22px 24px 4px; display: flex; align-items: center; justify-content: space-between;">
-                <span style="display: flex; align-items: center; gap: 10px;">
-                    <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
-                    Entraînements
-                    <span class="pill">@trainings.Count récurrence@(trainings.Count > 1 ? "s" : "")</span>
-                </span>
-                @if (canManage)
-                {
-                    <button class="icon-action" @onclick="OpenCreateTraining" aria-label="Ajouter un entraînement" title="Ajouter un entraînement">
-                        <svg viewBox="0 0 24 24" class="icon"><path d="M12 5v14M5 12h14"></path></svg>
-                    </button>
-                }
-            </div>
-            @if (trainings.Count == 0)
-            {
-                <p class="empty-note" style="padding: 0 24px 12px;">Aucun entraînement récurrent pour le moment.</p>
-            }
-            else
-            {
-                @foreach (var t in trainings)
-                {
-                    <div class="training-rule-row">
-                        <div class="training-days">
-                            @foreach (var d in TrainingOccurrenceHelper.WeekOrder)
-                            {
-                                <span class="training-day-pip @(t.Days.HasFlag(d.Mask) ? "on" : "off")">@d.Short[..1]</span>
-                            }
-                        </div>
-                        <div style="flex-grow: 1; min-width: 0;">
-                            <div style="font-size: 15.5px; font-weight: 700;">
-                                @TrainingOccurrenceHelper.DaysLabel(t.Days), @t.StartTime.ToString("HH:mm") – @t.EndTime.ToString("HH:mm")
-                                @if (visiblePlayers.Count > 1)
-                                {
-                                    <span class="pill" style="margin-left: 6px;">@t.Season?.Player?.FirstName @t.Season?.Player?.LastName</span>
-                                }
-                            </div>
-                            <div style="font-size: 12.5px; color: var(--muted); font-weight: 600; margin-top: 3px; display: flex; align-items: center; gap: 6px;">
-                                <svg viewBox="0 0 24 24" class="icon" style="width:13px;height:13px;"><path d="M12 21s-7-7.5-7-12a7 7 0 0 1 14 0c0 4.5-7 12-7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
-                                @t.Location &middot; du @t.StartDate.ToString("dd.MM.yy")@(t.EndDate is { } end ? $" au {end:dd.MM.yy}" : "")
-                            </div>
-                        </div>
-                        @if (canManage)
-                        {
-                            <div class="row-actions">
-                                <button class="icon-action" @onclick="() => OpenEditTraining(t)" aria-label="Modifier" title="Modifier">
-                                    <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
-                                </button>
-                                <button class="icon-action delete" @onclick="() => DeleteTraining(t.Id)" aria-label="Supprimer" title="Supprimer">
-                                    <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
-                                </button>
-                            </div>
-                        }
-                    </div>
-                }
-            }
-        </div>
-
         <div class="cal-toolbar">
             <div class="cal-nav">
                 <button class="icon-action" @onclick="GoPrevious" aria-label="Précédent">
@@ -96,7 +47,9 @@
                 @if (visiblePlayers.Count > 1)
                 {
                     <label class="dash-player-picker">
-                        <span class="dash-player-avatar">@(selectedPlayerId == 0 ? "T" : PlayerInitials(visiblePlayers.FirstOrDefault(p => p.Id == selectedPlayerId)))</span>
+                        <span class="dash-player-avatar">
+                            <PlayerAvatar Player="visiblePlayers.FirstOrDefault(p => p.Id == selectedPlayerId)">@(selectedPlayerId == 0 ? "T" : PlayerInitials(visiblePlayers.FirstOrDefault(p => p.Id == selectedPlayerId)))</PlayerAvatar>
+                        </span>
                         <select @bind="selectedPlayerId" @bind:after="OnPlayerFilterChangedAsync">
                             <option value="0">Tous les joueurs</option>
                             @foreach (var player in visiblePlayers)
@@ -236,7 +189,19 @@
                             <span class="event-fab-menu-icon type-training">
                                 <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
                             </span>
-                            Entraînement
+                            <span class="event-fab-menu-label">
+                                Séance d'entraînement
+                                <span class="event-fab-menu-sub">Une seule date</span>
+                            </span>
+                        </button>
+                        <button type="button" class="event-fab-menu-item" @onclick="OpenCreateTraining">
+                            <span class="event-fab-menu-icon type-training">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><path d="M17 2.1l4 4-4 4"></path><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"></path><path d="M7 21.9l-4-4 4-4"></path><path d="M21 11.8v2a4 4 0 0 1-4 4H3"></path></svg>
+                            </span>
+                            <span class="event-fab-menu-label">
+                                Entraînement récurrent
+                                <span class="event-fab-menu-sub">Chaque semaine, sur une période</span>
+                            </span>
                         </button>
                     </div>
                 }
@@ -250,6 +215,15 @@
     <Modal @ref="tournamentCreateModal" Label="Nouvel événement">
         <ChildContent>
             <EditForm Model="tournamentForm" OnValidSubmit="AddTournamentEvent">
+                <div class="field" style="margin-bottom: 16px;">
+                    <label>Équipe</label>
+                    <select @bind="tournamentForm.TeamNumber">
+                        @for (int i = 1; i <= 5; i++)
+                        {
+                            <option value="@i">Équipe @i</option>
+                        }
+                    </select>
+                </div>
                 @if (NonEquitationSeasons.Count > 1)
                 {
                     <div class="field" style="margin-bottom: 16px;">
@@ -257,7 +231,7 @@
                         <select @bind="tournamentForm.SeasonId">
                             @foreach (var s in NonEquitationSeasons)
                             {
-                                <option value="@s.Id">@s.Player?.FirstName @s.Player?.LastName — @s.Club?.Name (@s.Label)</option>
+                                <option value="@s.Id">@s.Player?.FirstName @s.Player?.LastName — @s.Club?.Name (@s.Label)@(s.IsArchived ? " · archivée" : "")</option>
                             }
                         </select>
                     </div>
@@ -365,7 +339,7 @@
                     {
                         <p class="empty-note" style="padding: 0 0 16px; display: flex; align-items: center; gap: 6px;">
                             <svg viewBox="0 0 24 24" class="icon" style="width:13px;height:13px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
-                            Ce changement ne concerne que cette séance. Récurrence (@TrainingOccurrenceHelper.DaysLabel(editingTraining.Days).ToLower()) et période : à modifier ci-dessus dans le bloc "Entraînements".
+                            Ce changement ne concerne que cette séance. Récurrence (@TrainingOccurrenceHelper.DaysLabel(editingTraining.Days).ToLower()) et période : à modifier depuis "Gérer entraînements".
                         </p>
                     }
                     @if (quickFormError is not null)
@@ -451,6 +425,60 @@
             </EditForm>
         </ChildContent>
     </Modal>
+
+    <Modal @ref="trainingManageModal" Label="Entraînements récurrents">
+        <Subtitle>
+            <span class="pill pill-gold" style="margin-left: 8px;">@trainings.Count</span>
+        </Subtitle>
+        <ChildContent>
+            @if (trainings.Count == 0)
+            {
+                <p class="empty-note" style="padding: 0 0 4px;">Aucun entraînement récurrent pour le moment.</p>
+            }
+            else
+            {
+                @foreach (var t in trainings)
+                {
+                    <div class="training-rule-row">
+                        <div class="training-rule-line1">
+                            <div class="training-days">
+                                @foreach (var d in TrainingOccurrenceHelper.WeekOrder)
+                                {
+                                    <span class="training-day-pip @(t.Days.HasFlag(d.Mask) ? "on" : "off")">@d.Short[..1]</span>
+                                }
+                            </div>
+                            @if (canManage)
+                            {
+                                <div class="row-actions">
+                                    <button class="icon-action" @onclick="() => OpenEditTraining(t)" aria-label="Modifier" title="Modifier">
+                                        <svg viewBox="0 0 24 24" class="icon"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+                                    </button>
+                                    <button class="icon-action delete" @onclick="() => DeleteTraining(t.Id)" aria-label="Supprimer" title="Supprimer">
+                                        <svg viewBox="0 0 24 24" class="icon"><path d="M3 6h18"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6M14 11v6"></path></svg>
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                        <div class="training-rule-line2">
+                            @TrainingOccurrenceHelper.DaysLabel(t.Days), @t.StartTime.ToString("HH:mm") – @t.EndTime.ToString("HH:mm")
+                            @if (visiblePlayers.Count > 1)
+                            {
+                                <span class="pill">@t.Season?.Player?.FirstName @t.Season?.Player?.LastName</span>
+                            }
+                            @if (!string.IsNullOrEmpty(t.Season?.Category))
+                            {
+                                <span class="pill pill-gold" title="Catégorie de la saison liée à cette règle">@t.Season.Category</span>
+                            }
+                        </div>
+                        <div class="training-rule-line3">
+                            <svg viewBox="0 0 24 24" class="icon"><path d="M12 21s-7-7.5-7-12a7 7 0 0 1 14 0c0 4.5-7 12-7 12z"></path><circle cx="12" cy="9" r="2.5"></circle></svg>
+                            @t.Location &middot; du @t.StartDate.ToString("dd.MM.yy")@(t.EndDate is { } end ? $" au {end:dd.MM.yy}" : "")
+                        </div>
+                    </div>
+                }
+            }
+        </ChildContent>
+    </Modal>
 </div>
 
 @code {
@@ -511,7 +539,8 @@
     private TournamentForm tournamentForm = new();
     private Modal? tournamentCreateModal;
     private string? tournamentFormError;
-    private List<Season> NonEquitationSeasons => availableSeasons.Where(s => s.Sport != Sport.Equitation).ToList();
+    private List<Season> allSeasonsIncludingArchived = [];
+    private List<Season> NonEquitationSeasons => allSeasonsIncludingArchived.Where(s => s.Sport != Sport.Equitation).ToList();
 
     // Entraînement ponctuel (une seule occurrence, à la différence du bloc "Entraînements" récurrents ci-dessus).
     private TrainingOccurrenceForm trainingOccurrenceForm = new();
@@ -527,6 +556,10 @@
     private Modal? trainingEditModal;
     private int editingTrainingId;
     private string? trainingFormError;
+
+    // Modale "Gérer entraînements" ouverte depuis le bouton du hero : liste les récurrences existantes.
+    private Modal? trainingManageModal;
+    private void OpenManageTrainings() => trainingManageModal?.Open();
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
 
@@ -586,12 +619,17 @@
         if (selectedPlayerId != 0) query = query.Where(t => t.Season!.PlayerId == selectedPlayerId);
         trainings = await query.OrderBy(t => t.Season!.Player!.FirstName).ThenBy(t => t.StartDate).ToListAsync();
 
-        availableSeasons = await Db.Seasons
+        var seasons = await Db.Seasons
             .Include(s => s.Player)
             .Include(s => s.Club)
-            .Where(s => playerIds.Contains(s.PlayerId) && !s.IsArchived)
+            .Where(s => playerIds.Contains(s.PlayerId))
             .OrderBy(s => s.Player!.FirstName)
             .ToListAsync();
+        availableSeasons = seasons.Where(s => !s.IsArchived).ToList();
+        // Une saison archivée reste sélectionnable pour rattacher un événement passé (ex. un tournoi
+        // oublié de la saison précédente) : seuls les entraînements (récurrents ou ponctuels), tournés vers
+        // l'avenir, se limitent aux saisons actives via availableSeasons.
+        allSeasonsIncludingArchived = seasons;
     }
 
     private static (DateOnly From, DateOnly To) RangeFor(CalendarViewMode mode, DateOnly reference) => mode switch
@@ -793,6 +831,7 @@
             City = tournamentForm.City.Trim(),
             Date = DateOnly.FromDateTime(tournamentForm.Date),
             KickoffTime = tournamentForm.KickoffTime,
+            TeamNumber = tournamentForm.TeamNumber,
             SeasonId = tournamentForm.SeasonId
         });
         await Db.SaveChangesAsync();
@@ -1088,6 +1127,7 @@
         public string City { get; set; } = "";
         public DateTime Date { get; set; } = DateTime.Today;
         public TimeOnly? KickoffTime { get; set; }
+        public int TeamNumber { get; set; } = 1;
     }
 
     private class TrainingOccurrenceForm

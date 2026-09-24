@@ -57,6 +57,14 @@ else
             </div>
         }
 
+        @if (trainingReviewNotice is not null)
+        {
+            <div class="club-added-banner">
+                <svg viewBox="0 0 24 24" class="icon"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5M12 16h.01"></path></svg>
+                <span>@trainingReviewNotice <a href="/calendrier" style="color: var(--pitch-dark); font-weight: 700;">Ouvrir le calendrier</a></span>
+            </div>
+        }
+
         @if (clubTimeline.Count > 1)
         {
             <div class="club-timeline-banner">
@@ -211,6 +219,15 @@ else
                 <ChildContent>
                     <EditForm Model="form" OnValidSubmit="AddTournament">
                         <div class="field" style="margin-bottom: 16px;">
+                            <label>Équipe</label>
+                            <select @bind="form.TeamNumber">
+                                @for (int i = 1; i <= 5; i++)
+                                {
+                                    <option value="@i">Équipe @i</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
                             <label>Type</label>
                             <select @bind="form.EventType">
                                 <option value="@EventType.Tournoi">Tournoi</option>
@@ -256,6 +273,39 @@ else
             </ChildContent>
         </Modal>
 
+        <Modal @ref="recurringTrainingCreateModal" Label="Nouvel entraînement récurrent">
+            <ChildContent>
+                <EditForm Model="recurringTrainingForm" OnValidSubmit="AddRecurringTraining">
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Jours de la semaine</label>
+                        <div class="day-toggle-row">
+                            @foreach (var d in TrainingOccurrenceHelper.WeekOrder)
+                            {
+                                <button type="button" class="day-toggle @(recurringTrainingForm.Days.Contains(d.Mask) ? "on" : "")" @onclick="() => ToggleRecurringDay(d.Mask)">@d.Short</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+                        <div class="field" style="margin-bottom: 0;"><label>Heure de début</label><input type="time" @bind="recurringTrainingForm.StartTime" /></div>
+                        <div class="field" style="margin-bottom: 0;"><label>Heure de fin</label><input type="time" @bind="recurringTrainingForm.EndTime" /></div>
+                    </div>
+                    <div class="field" style="margin-bottom: 16px;">
+                        <label>Lieu</label>
+                        <input @bind="recurringTrainingForm.Location" placeholder="Stade Municipal" />
+                    </div>
+                    <div class="form-row cols-3" style="grid-template-columns: 1fr 1fr; margin-bottom: 16px;">
+                        <div class="field" style="margin-bottom: 0;"><label>Du</label><input type="date" @bind="recurringTrainingForm.StartDate" /></div>
+                        <div class="field" style="margin-bottom: 0;"><label>Au (optionnel)</label><input type="date" @bind="recurringTrainingForm.EndDate" /></div>
+                    </div>
+                    @if (recurringTrainingFormError is not null)
+                    {
+                        <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@recurringTrainingFormError</p>
+                    }
+                    <button class="btn btn-primary" type="submit">Ajouter</button>
+                </EditForm>
+            </ChildContent>
+        </Modal>
+
         @if (canManage)
         {
             <div class="event-fab-wrap">
@@ -290,7 +340,19 @@ else
                             <span class="event-fab-menu-icon type-training">
                                 <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v10M7 12h10"></path></svg>
                             </span>
-                            Entraînement
+                            <span class="event-fab-menu-label">
+                                Séance d'entraînement
+                                <span class="event-fab-menu-sub">Une seule date</span>
+                            </span>
+                        </button>
+                        <button type="button" class="event-fab-menu-item" @onclick="OpenCreateRecurringTraining">
+                            <span class="event-fab-menu-icon type-training">
+                                <svg viewBox="0 0 24 24" class="icon" style="width:16px;height:16px;"><path d="M17 2.1l4 4-4 4"></path><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"></path><path d="M7 21.9l-4-4 4-4"></path><path d="M21 11.8v2a4 4 0 0 1-4 4H3"></path></svg>
+                            </span>
+                            <span class="event-fab-menu-label">
+                                Entraînement récurrent
+                                <span class="event-fab-menu-sub">Chaque semaine, sur une période</span>
+                            </span>
                         </button>
                     </div>
                 }
@@ -359,6 +421,7 @@ else
     private SeasonEditForm seasonEditForm = new();
     private string? seasonEditError;
     private Modal? seasonEditModal;
+    private string? trainingReviewNotice;
 
     // Bouton "+" unique proposant Tournoi/Plateau/Concours/Entraînement selon le sport
     // (évite d'avoir plusieurs boutons flottants superposés).
@@ -378,11 +441,16 @@ else
     private Modal? competitionEditModal;
     private int editingCompetitionId;
 
-    // Entraînement (tous sports)
+    // Entraînement (tous sports) : séance unique
     private AgendaView? agendaView;
     private TrainingForm trainingForm = new();
     private Modal? trainingCreateModal;
     private string? trainingFormError;
+
+    // Entraînement récurrent : règle hebdomadaire (jours + horaires + période), cf. TrainingOccurrenceHelper.
+    private RecurringTrainingForm recurringTrainingForm = new();
+    private Modal? recurringTrainingCreateModal;
+    private string? recurringTrainingFormError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -433,6 +501,7 @@ else
 
         var (startMonth, endMonth, category) = SeasonRenewalHelper.SuggestRenewal(season);
         seasonEditError = null;
+        trainingReviewNotice = null;
         seasonEditForm = new SeasonEditForm
         {
             Category = category,
@@ -448,6 +517,7 @@ else
         if (!canManage || season is null) return;
 
         seasonEditError = null;
+        trainingReviewNotice = null;
         seasonEditForm = new SeasonEditForm
         {
             Category = season.Category,
@@ -492,13 +562,23 @@ else
         var entity = await Db.Seasons.FindAsync(Id);
         if (entity is null) return;
 
-        entity.Category = seasonEditForm.Category.Trim();
+        var previousCategory = entity.Category;
+        var newCategory = seasonEditForm.Category.Trim();
+
+        entity.Category = newCategory;
         entity.ClubId = seasonEditForm.ClubId;
         entity.StartDate = startDate;
         entity.EndDate = endDate;
         entity.Label = SeasonLabelHelper.ComputeLabel(seasonEditForm.StartMonth, seasonEditForm.EndMonth) ?? startDate.Year.ToString();
 
         await Db.SaveChangesAsync();
+
+        // Les jours d'entraînement dépendent souvent de la catégorie (horaires différents par tranche d'âge) :
+        // Training est rattaché à la Season, pas à sa catégorie, donc rien ne se met à jour tout seul ici.
+        trainingReviewNotice = previousCategory != newCategory && await Db.Trainings.AnyAsync(t => t.SeasonId == Id)
+            ? $"Catégorie changée ({previousCategory} → {newCategory}). Vérifie les jours d'entraînement dans le calendrier : ils ne sont pas mis à jour automatiquement."
+            : null;
+
         seasonEditModal?.Close();
         await LoadAsync();
     }
@@ -514,6 +594,7 @@ else
             City = form.City.Trim(),
             Date = DateOnly.FromDateTime(form.Date),
             KickoffTime = form.KickoffTime,
+            TeamNumber = form.TeamNumber,
             SeasonId = Id
         });
         await Db.SaveChangesAsync();
@@ -559,6 +640,60 @@ else
         });
         await Db.SaveChangesAsync();
         trainingCreateModal?.Close();
+        await (agendaView?.ReloadAsync() ?? Task.CompletedTask);
+    }
+
+    private void OpenCreateRecurringTraining()
+    {
+        if (season is null) return;
+        showEventMenu = false;
+        recurringTrainingFormError = null;
+        recurringTrainingForm = new RecurringTrainingForm
+        {
+            StartDate = season.StartDate ?? DateOnly.FromDateTime(DateTime.Today),
+            EndDate = season.EndDate
+        };
+        recurringTrainingCreateModal?.Open();
+    }
+
+    private void ToggleRecurringDay(DaysOfWeekMask day)
+    {
+        if (!recurringTrainingForm.Days.Remove(day)) recurringTrainingForm.Days.Add(day);
+    }
+
+    private async Task AddRecurringTraining()
+    {
+        if (!canManage) return;
+        recurringTrainingFormError = null;
+
+        if (recurringTrainingForm.Days.Count == 0)
+        {
+            recurringTrainingFormError = "Sélectionne au moins un jour de la semaine.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(recurringTrainingForm.Location))
+        {
+            recurringTrainingFormError = "Indique un lieu.";
+            return;
+        }
+        if (recurringTrainingForm.EndTime <= recurringTrainingForm.StartTime)
+        {
+            recurringTrainingFormError = "L'heure de fin doit être après l'heure de début.";
+            return;
+        }
+
+        Db.Trainings.Add(new Training
+        {
+            SeasonId = Id,
+            Days = recurringTrainingForm.Days.Aggregate(DaysOfWeekMask.None, (acc, d) => acc | d),
+            StartTime = recurringTrainingForm.StartTime,
+            EndTime = recurringTrainingForm.EndTime,
+            Location = recurringTrainingForm.Location.Trim(),
+            StartDate = recurringTrainingForm.StartDate,
+            EndDate = recurringTrainingForm.EndDate
+        });
+        await Db.SaveChangesAsync();
+        recurringTrainingCreateModal?.Close();
         await (agendaView?.ReloadAsync() ?? Task.CompletedTask);
     }
 
@@ -671,6 +806,7 @@ else
         public string City { get; set; } = "";
         public DateTime Date { get; set; } = DateTime.Today;
         public TimeOnly? KickoffTime { get; set; }
+        public int TeamNumber { get; set; } = 1;
     }
 
     private class CompetitionForm
@@ -694,5 +830,15 @@ else
         public TimeOnly StartTime { get; set; } = new(18, 0);
         public TimeOnly EndTime { get; set; } = new(19, 30);
         public string Location { get; set; } = "";
+    }
+
+    private class RecurringTrainingForm
+    {
+        public HashSet<DaysOfWeekMask> Days { get; set; } = [];
+        public TimeOnly StartTime { get; set; } = new(18, 0);
+        public TimeOnly EndTime { get; set; } = new(19, 30);
+        public string Location { get; set; } = "";
+        public DateOnly StartDate { get; set; } = DateOnly.FromDateTime(DateTime.Today);
+        public DateOnly? EndDate { get; set; }
     }
 }

@@ -20,6 +20,9 @@ public class CalendarEvent
     public EventType? EventType { get; set; }
     public required string Location { get; set; }
 
+    /// <summary>Numéro d'équipe (1 à 5) du tournoi/plateau — absent pour les entraînements.</summary>
+    public int? TeamNumber { get; set; }
+
     public int PlayerId { get; set; }
     public required string PlayerName { get; set; }
     public string? ClubName { get; set; }

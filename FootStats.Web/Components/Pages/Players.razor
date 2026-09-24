@@ -3,7 +3,6 @@
 @rendermode InteractiveServer
 @inject AppDbContext Db
 @inject NavigationManager Navigation
-@inject UploadsPathProvider Uploads
 @inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
 
@@ -66,7 +65,7 @@
                         </div>
                         <div class="field" style="margin-bottom: 16px;">
                             <label>Photo</label>
-                            <FilePicker Accept="image/*" Title="Glissez une photo ici" Hint="PNG, JPG..." OnFileSelected="f => selectedPhoto = f" />
+                            <PhotoCropper OnPhotoSaved="p => newPhotoPath = p" OnPhotoRemoved="() => newPhotoPath = null" />
                         </div>
                         <button class="btn btn-primary" type="submit">Ajouter</button>
                     </EditForm>
@@ -125,7 +124,7 @@
     private List<Player> activePlayers = [];
     private List<Player> inactivePlayers = [];
     private PlayerForm form = new();
-    private IBrowserFile? selectedPhoto;
+    private string? newPhotoPath;
     private CreateFab? fab;
     private string? deleteError;
     private Dictionary<int, List<Club>> currentClubs = new();
@@ -191,12 +190,6 @@
         if (!canManage) return;
         if (string.IsNullOrWhiteSpace(form.FirstName) || string.IsNullOrWhiteSpace(form.LastName)) return;
 
-        string? photoPath = null;
-        if (selectedPhoto is not null)
-        {
-            photoPath = await FileStorage.SavePhotoAsync(selectedPhoto, Uploads.Root, "players");
-        }
-
         var newPlayer = new Player
         {
             FirstName = form.FirstName.Trim(),
@@ -204,7 +197,7 @@
             BirthDate = DateOnly.FromDateTime(form.BirthDate),
             Position = form.Position,
             PreferredNumber = form.PreferredNumber,
-            PhotoPath = photoPath,
+            PhotoPath = newPhotoPath,
             OwnerAdminId = familyAdminId
         };
 
@@ -219,7 +212,7 @@
         await Db.SaveChangesAsync();
 
         form = new PlayerForm();
-        selectedPhoto = null;
+        newPhotoPath = null;
         fab?.Close();
         await LoadAsync();
     }

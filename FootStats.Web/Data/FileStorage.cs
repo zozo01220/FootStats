@@ -19,4 +19,17 @@ public static class FileStorage
 
         return $"/uploads/{subfolder}/{fileName}";
     }
+
+    public static async Task<string> SavePhotoBytesAsync(byte[] bytes, string extension, string uploadsRoot, string subfolder)
+    {
+        var uploadsDir = Path.Combine(uploadsRoot, subfolder);
+        Directory.CreateDirectory(uploadsDir);
+
+        var fileName = $"{Guid.NewGuid()}{extension}";
+        var fullPath = Path.Combine(uploadsDir, fileName);
+
+        await File.WriteAllBytesAsync(fullPath, bytes);
+
+        return $"/uploads/{subfolder}/{fileName}";
+    }
 }

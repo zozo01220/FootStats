@@ -1,0 +1,15 @@
+@* Affiche la photo du joueur si disponible, sinon le contenu de secours (initiales, "T"...). À placer à
+   l'intérieur du conteneur qui porte déjà la taille/forme de l'avatar (.dash-player-avatar, .card-badge...). *@
+@if (Player is not null && !string.IsNullOrEmpty(Player.PhotoPath))
+{
+    <img src="@Player.PhotoPath" alt="@Player.FirstName @Player.LastName" />
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public Player? Player { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

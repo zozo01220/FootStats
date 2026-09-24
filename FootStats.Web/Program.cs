@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
 using Microsoft.AspNetCore.Authentication.MicrosoftAccount;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 
@@ -77,6 +78,13 @@ builder.Services.AddRazorComponents()
     });
 
 var app = builder.Build();
+
+// Derrière Nginx (reverse proxy en prod), Kestrel ne voit que du HTTP : sans ça, UseHttpsRedirection et les
+// handlers OAuth (Google/Microsoft) construisent leurs URLs en http://, ce qui casse le redirect_uri attendu.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 using (var scope = app.Services.CreateScope())
 {

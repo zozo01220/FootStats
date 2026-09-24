@@ -48,6 +48,7 @@ public class CalendarService(AppDbContext db, CurrentUserService currentUser)
                 Title = string.IsNullOrWhiteSpace(t.Name) ? t.EventType.ToString() : t.Name,
                 EventType = t.EventType,
                 Location = t.City,
+                TeamNumber = t.TeamNumber,
                 PlayerId = season.PlayerId,
                 PlayerName = $"{season.Player!.FirstName} {season.Player.LastName}",
                 ClubName = season.Club?.Name,

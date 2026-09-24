@@ -79,6 +79,150 @@ window.footstats = {
     }
 };
 
+/* Recadrage circulaire d'une photo (PhotoCropper.razor). Tout le pan/zoom se fait ici, en JS pur, sans aller-retour
+   Blazor : seuls le choix du fichier et la validation finale (export du canvas) appellent .NET. L'état par canvas
+   (image chargée, zoom, décalage) est gardé dans une WeakMap plutôt que sur le composant Blazor. */
+footstats.cropper = (function () {
+    var states = new WeakMap();
+
+    // Ratio du masque circulaire (marge / côté), doit rester synchronisé avec la marge de .photo-cropper-mask
+    // dans theme.css (18px sur une boîte de 220px) pour que le cercle CSS corresponde au cadrage exporté.
+    var MASK_MARGIN_RATIO = 18 / 220;
+
+    function circleRadius(canvas) {
+        var size = canvas.width;
+        return (size / 2) - (MASK_MARGIN_RATIO * size);
+    }
+
+    function baseDrawSize(canvas, state) {
+        var r = circleRadius(canvas);
+        var diameter = r * 2;
+        var ratio = state.img.width / state.img.height;
+        var w, h;
+        if (ratio >= 1) { h = diameter; w = diameter * ratio; } else { w = diameter; h = diameter / ratio; }
+        return { w: w * state.scale, h: h * state.scale };
+    }
+
+    function clamp(canvas, state) {
+        var d = baseDrawSize(canvas, state);
+        var r = circleRadius(canvas);
+        var maxX = Math.max(0, d.w / 2 - r);
+        var maxY = Math.max(0, d.h / 2 - r);
+        state.offsetX = Math.min(maxX, Math.max(-maxX, state.offsetX));
+        state.offsetY = Math.min(maxY, Math.max(-maxY, state.offsetY));
+    }
+
+    function draw(canvas) {
+        var state = states.get(canvas);
+        if (!state) return;
+        var ctx = canvas.getContext('2d');
+        var size = canvas.width;
+        ctx.clearRect(0, 0, size, size);
+        var d = baseDrawSize(canvas, state);
+        var cx = size / 2 + state.offsetX;
+        var cy = size / 2 + state.offsetY;
+        ctx.drawImage(state.img, cx - d.w / 2, cy - d.h / 2, d.w, d.h);
+    }
+
+    function loadUrl(canvas, url, revokeAfter) {
+        var img = new Image();
+        img.onload = function () {
+            states.set(canvas, { img: img, scale: 1.4, offsetX: 0, offsetY: 0 });
+            draw(canvas);
+            if (revokeAfter) URL.revokeObjectURL(url);
+        };
+        img.src = url;
+    }
+
+    return {
+        loadFromFile: function (canvas, file) {
+            loadUrl(canvas, URL.createObjectURL(file), true);
+        },
+        loadFromUrl: function (canvas, url) {
+            loadUrl(canvas, url, false);
+        },
+        setZoom: function (canvas, value) {
+            var state = states.get(canvas);
+            if (!state) return;
+            state.scale = value / 100;
+            clamp(canvas, state);
+            draw(canvas);
+        },
+        bindFileInput: function (input, canvas, dotNetRef) {
+            input.addEventListener('change', function () {
+                var file = input.files && input.files[0];
+                if (!file) return;
+                footstats.cropper.loadFromFile(canvas, file);
+                dotNetRef.invokeMethodAsync('OnImageReady');
+                input.value = '';
+            });
+        },
+        bindZoomSlider: function (slider, canvas) {
+            slider.addEventListener('input', function () {
+                footstats.cropper.setZoom(canvas, slider.value);
+            });
+        },
+        bindDrag: function (wrap, canvas) {
+            var dragging = false;
+            var start = { x: 0, y: 0, offX: 0, offY: 0 };
+
+            function pos(e) {
+                var rect = wrap.getBoundingClientRect();
+                var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                var clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: (clientX - rect.left) * (canvas.width / rect.width),
+                    y: (clientY - rect.top) * (canvas.height / rect.height)
+                };
+            }
+
+            function down(e) {
+                if (!states.get(canvas)) return;
+                dragging = true;
+                wrap.classList.add('dragging');
+                var p = pos(e);
+                var state = states.get(canvas);
+                start = { x: p.x, y: p.y, offX: state.offsetX, offY: state.offsetY };
+            }
+
+            function move(e) {
+                if (!dragging) return;
+                e.preventDefault();
+                var state = states.get(canvas);
+                if (!state) return;
+                var p = pos(e);
+                state.offsetX = start.offX + (p.x - start.x);
+                state.offsetY = start.offY + (p.y - start.y);
+                clamp(canvas, state);
+                draw(canvas);
+            }
+
+            function up() {
+                dragging = false;
+                wrap.classList.remove('dragging');
+            }
+
+            wrap.addEventListener('mousedown', down);
+            window.addEventListener('mousemove', move);
+            window.addEventListener('mouseup', up);
+            wrap.addEventListener('touchstart', down, { passive: true });
+            wrap.addEventListener('touchmove', move, { passive: false });
+            wrap.addEventListener('touchend', up);
+        },
+        exportCrop: function (canvas) {
+            // Renvoyer le Blob brut : appelée via JS.InvokeAsync<IJSStreamReference>, c'est Blazor qui le
+            // convertit en flux. DotNet.createJSStreamReference ne sert qu'à passer un flux en ARGUMENT d'un
+            // appel .NET déclenché depuis JS (invokeMethodAsync), pas comme valeur de retour ici.
+            return new Promise(function (resolve, reject) {
+                canvas.toBlob(function (blob) {
+                    if (!blob) { reject('export-failed'); return; }
+                    resolve(blob);
+                }, 'image/png');
+            });
+        }
+    };
+})();
+
 /* Détails du panneau d'erreur (#blazor-error-ui, cf. App.razor). Blazor affiche le panneau mais n'y écrit rien :
    le texte de l'exception .NET n'arrive au navigateur que par la console (et seulement si DetailedErrors est
    actif, sinon on reçoit l'identifiant d'erreur à recouper avec les logs serveur). On garde donc les derniers

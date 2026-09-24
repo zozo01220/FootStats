@@ -27,6 +27,7 @@ else
                 {
                     <span class="pill">@tournament.Season.Category</span>
                 }
+                <span class="pill">Équipe @tournament.TeamNumber</span>
             </div>
             <h1 class="page-title" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
                 <span>@(tournament.Name ?? tournament.EventType.ToString())</span>
@@ -44,7 +45,7 @@ else
                 @foreach (var m in tournament.Matches)
                 {
                     <div class="score-row" style="grid-template-columns: 56px 22px 1fr 0.85fr 0.7fr 0.5fr 0.6fr 0.6fr 0.8fr 76px;">
-                        <div class="team-chip">@m.TeamNumber</div>
+                        <div class="team-chip">@tournament.TeamNumber</div>
                         <span class="captain-star-cell">
                             @if (m.IsCaptain)
                             {
@@ -92,7 +93,7 @@ else
                         <div class="card-stripe @MatchResultClass(m)"></div>
                         <div class="mcm-body">
                             <div class="mcm-top">
-                                <div class="team-chip">@m.TeamNumber</div>
+                                <div class="team-chip">@tournament.TeamNumber</div>
                                 <div class="mcm-head-text">
                                     <div class="mcm-vs">Contre</div>
                                     <div class="mcm-opponent">
@@ -168,15 +169,6 @@ else
                 <ChildContent>
                     <EditForm Model="form" OnValidSubmit="AddMatch">
                         <div class="field" style="margin-bottom: 16px;">
-                            <label>Équipe</label>
-                            <select @bind="form.TeamNumber">
-                                @for (int i = 1; i <= 5; i++)
-                                {
-                                    <option value="@i">Équipe @i</option>
-                                }
-                            </select>
-                        </div>
-                        <div class="field" style="margin-bottom: 16px;">
                             <label>Adversaire</label>
                             <input @bind="form.Opponent" />
                         </div>
@@ -250,15 +242,6 @@ else
         </Subtitle>
         <ChildContent>
             <EditForm Model="editForm" OnValidSubmit="SaveEdit">
-                <div class="field" style="margin-bottom: 16px;">
-                    <label>Équipe</label>
-                    <select @bind="editForm.TeamNumber">
-                        @for (int i = 1; i <= 5; i++)
-                        {
-                            <option value="@i">Équipe @i</option>
-                        }
-                    </select>
-                </div>
                 <div class="field" style="margin-bottom: 16px;">
                     <label>Adversaire</label>
                     <input @bind="editForm.Opponent" />
@@ -379,7 +362,6 @@ else
         Db.Matches.Add(new MatchRecord
         {
             TournamentId = Id,
-            TeamNumber = form.TeamNumber,
             Opponent = string.IsNullOrWhiteSpace(form.Opponent) ? null : form.Opponent.Trim(),
             PlayerGoals = form.PlayerGoals,
             PlayerAssists = form.PlayerAssists,
@@ -403,7 +385,6 @@ else
         editingMatchId = match.Id;
         editForm = new MatchForm
         {
-            TeamNumber = match.TeamNumber,
             Opponent = match.Opponent ?? "",
             PlayerGoals = match.PlayerGoals,
             PlayerAssists = match.PlayerAssists,
@@ -424,7 +405,6 @@ else
         var match = await Db.Matches.FindAsync(editingMatchId);
         if (match is null) return;
 
-        match.TeamNumber = editForm.TeamNumber;
         match.Opponent = string.IsNullOrWhiteSpace(editForm.Opponent) ? null : editForm.Opponent.Trim();
         match.PlayerGoals = editForm.PlayerGoals;
         match.PlayerAssists = editForm.PlayerAssists;
@@ -454,8 +434,8 @@ else
             ConfirmLabel = "Supprimer",
             Tone = ConfirmTone.Danger,
             Icon = ConfirmIcon.Trash,
-            SubjectName = string.IsNullOrWhiteSpace(match.Opponent) ? $"Équipe {match.TeamNumber}" : match.Opponent,
-            SubjectMeta = $"Équipe {match.TeamNumber} · {match.TeamGoalsFor} – {match.TeamGoalsAgainst} · {match.PlayerGoals} but{(match.PlayerGoals > 1 ? "s" : "")}"
+            SubjectName = string.IsNullOrWhiteSpace(match.Opponent) ? $"Équipe {tournament!.TeamNumber}" : match.Opponent,
+            SubjectMeta = $"Équipe {tournament!.TeamNumber} · {match.TeamGoalsFor} – {match.TeamGoalsAgainst} · {match.PlayerGoals} but{(match.PlayerGoals > 1 ? "s" : "")}"
         })) return;
 
         Db.Matches.Remove(match);
@@ -471,7 +451,6 @@ else
 
     private class MatchForm
     {
-        public int TeamNumber { get; set; } = 1;
         public string Opponent { get; set; } = "";
         public string Position { get; set; } = "";
         public int PlayerGoals { get; set; }

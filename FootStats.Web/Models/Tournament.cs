@@ -15,6 +15,10 @@ public class Tournament
     public DateOnly Date { get; set; }
     public TimeOnly? KickoffTime { get; set; }
 
+    /// <summary>Numéro d'équipe (1 à 5) pour tous les matchs de cet événement — fixé une fois à la création,
+    /// plutôt que choisi match par match (un tournoi/plateau se joue avec une seule équipe).</summary>
+    public int TeamNumber { get; set; } = 1;
+
     public int SeasonId { get; set; }
     public Season? Season { get; set; }
 
