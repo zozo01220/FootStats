@@ -68,7 +68,13 @@ builder.Services.AddAuthorization();
 builder.Services.AddCascadingAuthenticationState();
 
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveServerComponents(options =>
+    {
+        // Envoie le texte de l'exception au navigateur, que le panneau d'erreur affiche dans "Détails
+        // techniques". Actif en développement seulement, car cela expose les traces d'appels aux utilisateurs
+        // connectés ; DetailedErrors=true (variable d'environnement) permet de les obtenir aussi en production.
+        options.DetailedErrors = builder.Configuration.GetValue("DetailedErrors", builder.Environment.IsDevelopment());
+    });
 
 var app = builder.Build();
 

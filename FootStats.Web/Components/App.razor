@@ -23,6 +23,35 @@
 
 <body>
     <Routes />
+
+    @* Panneau d'erreur fatale, affiché par Blazor (display:block) quand une exception non gérée tue le circuit.
+       Volontairement en HTML/CSS/JS purs et placé ici plutôt que dans un layout : à ce stade plus aucun composant
+       Blazor ne peut rendre, et il doit exister sur toutes les pages, quel que soit leur layout. *@
+    <div id="blazor-error-ui" data-nosnippet>
+        <div class="errbox" role="alertdialog" aria-labelledby="footstats-error-title">
+            <div class="errbox-head">
+                <div class="errbox-icon">
+                    <svg viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4M12 17h.01"></path></svg>
+                </div>
+                <div class="errbox-title" id="footstats-error-title">Une erreur est survenue</div>
+            </div>
+            <div class="errbox-body">
+                <p class="errbox-message">
+                    L'application a rencontré un problème inattendu et ne répond plus.
+                    Rechargez la page pour continuer : les données déjà enregistrées ne sont pas affectées.
+                </p>
+                <details class="errbox-details">
+                    <summary>Détails techniques</summary>
+                    <pre id="footstats-error-detail">Aucun détail technique disponible.</pre>
+                </details>
+            </div>
+            <div class="errbox-actions">
+                <button type="button" class="btn btn-outline errbox-dismiss">Fermer</button>
+                <button type="button" class="btn btn-primary errbox-reload">Recharger la page</button>
+            </div>
+        </div>
+    </div>
+
     <script src="_framework/blazor.web.js"></script>
     <script src="site.js"></script>
     <script>
