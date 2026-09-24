@@ -41,13 +41,9 @@
     </main>
 </div>
 
-<ConfirmDialog />
-
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+@* Îlot interactif : le layout est rendu en statique (Routes.razor n'a pas de rendermode), donc sans ceci le
+   composant vivrait hors du circuit et dans une autre portée DI que les pages, sans jamais recevoir leurs appels. *@
+<ConfirmDialog @rendermode="InteractiveServer" />
 
 @code {
     private PeriodicTimer? sessionCheckTimer;
