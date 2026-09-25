@@ -37,6 +37,7 @@ public class CalendarEvent
     public bool IsCancelled { get; set; }
     public TrainingCancellationReason? CancellationReason { get; set; }
 
-    /// <summary>Présence pointée pour cette occurrence d'entraînement (null = pas encore pointée).</summary>
-    public TrainingAttendanceStatus? AttendanceStatus { get; set; }
+    /// <summary>Présence pointée pour cet événement — occurrence d'entraînement ou tournoi/plateau
+    /// (null = pas encore pointée).</summary>
+    public AttendanceStatus? AttendanceStatus { get; set; }
 }

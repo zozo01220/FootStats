@@ -272,9 +272,22 @@ button, input, select { font-family: var(--font-body); }
 .season-card.featured .card-badge, .player-card.featured .card-badge, .club-card.featured .card-badge { animation: heroPulse 2.6s ease-in-out infinite; box-shadow: 0 0 0 6px rgba(232,179,48,0.22); }
 .season-card.featured .mini-ball, .player-card.featured .mini-ball, .club-card.featured .mini-ball { position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; opacity: 0.4; animation: heroPulse 3.2s ease-in-out infinite; }
 
-.card-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1; }
+.card-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 8px; flex-grow: 1; position: relative; overflow: hidden; }
 .card-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.card-title { font-family: var(--font-display); font-size: 22px; color: var(--ink); }
+.card-title-main { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.card-title-jersey { flex-shrink: 0; }
+.card-title { font-family: var(--font-display); font-size: 22px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-ghost-number {
+  position: absolute; top: -12px; right: 2px; font-family: var(--font-display);
+  font-size: 84px; line-height: 1; color: var(--pitch-dark); opacity: 0.05;
+  pointer-events: none; user-select: none; z-index: 0;
+}
+.player-card .card-title-row, .player-card .card-line, .player-card .presence-row, .player-card .card-actions-row { position: relative; z-index: 1; }
+.presence-row { display: flex; align-items: center; gap: 10px; margin-top: 2px; position: relative; z-index: 1; }
+.presence-ring text { font-family: var(--font-body); }
+.presence-label-col { display: flex; flex-direction: column; gap: 1px; }
+.presence-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.presence-sub { font-size: 11px; color: var(--muted); }
 .card-line { font-size: 13px; color: var(--muted); font-weight: 600; display: flex; align-items: center; gap: 6px; }
 .card-line .icon { width: 15px; height: 15px; color: var(--pitch); flex-shrink: 0; }
 .card-line span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -379,7 +392,7 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .card-actions-row .btn { min-width: 0; padding: 9px 12px; font-size: 12.5px; gap: 6px; }
 .card-actions-row .btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.pill { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 5px 11px; border-radius: 999px; background: rgba(30,86,49,0.1); color: var(--pitch-dark); }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 5px 11px; border-radius: 999px; background: rgba(30,86,49,0.1); color: var(--pitch-dark); }
 .pill-gold { background: rgba(232,179,48,0.18); color: var(--gold-dark); }
 
 /* Form fields */
@@ -926,6 +939,7 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
   .card-badge { width: 46px; height: 46px; font-size: 15px; }
   .card-title { font-size: 18px; }
   .card-body { padding: 14px 16px 16px; gap: 6px; }
+  .card-ghost-number { font-size: 64px; }
 
   /* Scoreboard rows become stacked cards on mobile */
   .score-row.head { display: none; }
@@ -1339,6 +1353,25 @@ svg.captain-star { width: 20px; height: 20px; flex-shrink: 0; fill: var(--gold);
 .attendance-pick.present.selected { background: var(--pitch); border-color: var(--pitch); color: #fff; }
 .attendance-pick.excused.selected { background: var(--gold); border-color: var(--gold-dark); color: var(--ink); }
 .attendance-pick.absent.selected { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* Présence inline sur un tournoi/plateau dans l'agenda (liste de la fiche saison) : remplace le badge de statut
+   utilisé pour un entraînement, puisque le clic sur l'événement ouvre directement sa fiche (création de matchs)
+   plutôt qu'une modale de pointage. */
+.agenda-attendance-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.agenda-attendance-row .attendance-pick { padding: 5px 11px; font-size: 11.5px; }
+
+/* Widget "Prochain événement" (fiche saison) : raccourci pour pointer la présence au prochain entraînement
+   sans ouvrir l'agenda. Même logique de pointage pour un tournoi/plateau (voir Tournament.AttendanceStatus). */
+.next-event-card { background: var(--paper-alt); border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.next-event-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.next-event-relative { font-size: 11.5px; color: var(--muted); font-weight: 600; flex-shrink: 0; }
+.next-event-title { font-family: var(--font-display); font-size: 21px; color: var(--ink); letter-spacing: 0.01em; }
+.next-event-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink); }
+.next-event-line .icon { color: var(--muted); }
+.next-event-divider { border-top: 1px solid var(--line); margin-top: 2px; padding-top: 12px; }
+.next-event-attendance-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.next-event-empty { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13.5px; }
+.next-event-empty .icon { width: 22px; height: 22px; opacity: 0.6; flex-shrink: 0; }
 
 .event-cancelled.reason-annule { background: rgba(196,106,31,0.08); }
 .event-cancelled.reason-annule .agenda-stripe,

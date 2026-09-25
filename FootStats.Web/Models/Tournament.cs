@@ -25,5 +25,9 @@ public class Tournament
     /// <summary>Empêche de renvoyer plusieurs fois le rappel par email de cet évènement (voir MatchReminderHostedService).</summary>
     public bool ReminderSent { get; set; }
 
+    /// <summary>Présence pointée à ce tournoi/plateau. Un seul champ (pas de table à part comme
+    /// <see cref="TrainingAttendance"/>) puisqu'un tournoi n'est pas récurrent : une ligne = un événement.</summary>
+    public AttendanceStatus? AttendanceStatus { get; set; }
+
     public List<MatchRecord> Matches { get; set; } = [];
 }

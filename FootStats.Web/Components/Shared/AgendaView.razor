@@ -88,14 +88,18 @@
                             </span>
                             <span class="agenda-club-name">@(e.ClubName ?? "Club inconnu")</span>
                         </div>
+                        @if (!e.IsCancelled && CanManage)
+                        {
+                            <div class="agenda-attendance-row" @onclick:stopPropagation="true">
+                                <button type="button" class="attendance-pick present @(e.AttendanceStatus == AttendanceStatus.Present ? "selected" : "")" @onclick="() => ToggleAttendance(e, AttendanceStatus.Present)">Présent</button>
+                                <button type="button" class="attendance-pick excused @(e.AttendanceStatus == AttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleAttendance(e, AttendanceStatus.Excused)">Excusé</button>
+                                <button type="button" class="attendance-pick absent @(e.AttendanceStatus == AttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleAttendance(e, AttendanceStatus.Absent)">Absent</button>
+                            </div>
+                        }
                     </div>
                     @if (e.IsCancelled && e.CancellationReason is { } reason)
                     {
                         <span class="event-cancel-badge agenda-cancel-badge">@TrainingOccurrenceHelper.CancellationReasonLabel(reason)</span>
-                    }
-                    else if (e.Kind == CalendarEventKind.Training && e.AttendanceStatus is { } attendanceStatus)
-                    {
-                        <span class="status-chip agenda-cancel-badge @AttendanceCssClass(attendanceStatus)">@AttendanceLabel(attendanceStatus)</span>
                     }
                     @if (CanManage)
                     {
@@ -138,13 +142,17 @@
                                 {
                                     <span class="event-cancel-badge">@TrainingOccurrenceHelper.CancellationReasonLabel(mobileReason)</span>
                                 }
-                                else if (e.Kind == CalendarEventKind.Training && e.AttendanceStatus is { } mobileAttendanceStatus)
-                                {
-                                    <span class="status-chip @AttendanceCssClass(mobileAttendanceStatus)">@AttendanceLabel(mobileAttendanceStatus)</span>
-                                }
                             </div>
                             <div class="ecm-club-logo-placeholder">@PlayerInitialsFromName(e.PlayerName)</div>
                         </div>
+                        @if (!e.IsCancelled && CanManage)
+                        {
+                            <div class="agenda-attendance-row" @onclick:stopPropagation="true">
+                                <button type="button" class="attendance-pick present @(e.AttendanceStatus == AttendanceStatus.Present ? "selected" : "")" @onclick="() => ToggleAttendance(e, AttendanceStatus.Present)">Présent</button>
+                                <button type="button" class="attendance-pick excused @(e.AttendanceStatus == AttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleAttendance(e, AttendanceStatus.Excused)">Excusé</button>
+                                <button type="button" class="attendance-pick absent @(e.AttendanceStatus == AttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleAttendance(e, AttendanceStatus.Absent)">Absent</button>
+                            </div>
+                        }
                         <div class="ecm-bottom">
                             @if (e.StartTime is { } start)
                             {
@@ -230,7 +238,7 @@
                 {
                     <p class="empty-note" style="color: var(--danger); padding: 0 0 8px;">@quickFormError</p>
                 }
-                @if (!showCancelReasonPicker && quickEditEvent is not null && quickEditEvent.Date <= Today)
+                @if (!showCancelReasonPicker && quickEditEvent is not null)
                 {
                     <div class="cancel-reason-box">
                         <div class="cancel-reason-title">
@@ -238,9 +246,9 @@
                             Présence
                         </div>
                         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                            <button type="button" class="attendance-pick present @(quickEditEvent.AttendanceStatus == TrainingAttendanceStatus.Present ? "selected" : "")" @onclick="() => ToggleAttendance(TrainingAttendanceStatus.Present)">Présent</button>
-                            <button type="button" class="attendance-pick excused @(quickEditEvent.AttendanceStatus == TrainingAttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleAttendance(TrainingAttendanceStatus.Excused)">Excusé</button>
-                            <button type="button" class="attendance-pick absent @(quickEditEvent.AttendanceStatus == TrainingAttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleAttendance(TrainingAttendanceStatus.Absent)">Absent</button>
+                            <button type="button" class="attendance-pick present @(quickEditEvent.AttendanceStatus == AttendanceStatus.Present ? "selected" : "")" @onclick="() => ToggleAttendance(quickEditEvent, AttendanceStatus.Present)">Présent</button>
+                            <button type="button" class="attendance-pick excused @(quickEditEvent.AttendanceStatus == AttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleAttendance(quickEditEvent, AttendanceStatus.Excused)">Excusé</button>
+                            <button type="button" class="attendance-pick absent @(quickEditEvent.AttendanceStatus == AttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleAttendance(quickEditEvent, AttendanceStatus.Absent)">Absent</button>
                         </div>
                     </div>
                 }
@@ -431,8 +439,10 @@
             if (CanManage) await OpenTrainingQuickEdit(e);
             return;
         }
-        Navigation.NavigateTo($"/tournaments/{e.TournamentId}");
+        GoToTournamentDetail(e.TournamentId);
     }
+
+    private void GoToTournamentDetail(int? tournamentId) => Navigation.NavigateTo($"/tournaments/{tournamentId}");
 
     private async Task OpenTrainingQuickEdit(CalendarEvent e)
     {
@@ -542,49 +552,50 @@
         await LoadEventsAsync();
     }
 
-    private async Task ToggleAttendance(TrainingAttendanceStatus status)
+    /// <summary>Pointe la présence à un événement, quel que soit son type : une occurrence d'entraînement
+    /// (table <see cref="TrainingAttendance"/>, une ligne par date) ou un tournoi/plateau (champ direct sur
+    /// <see cref="Tournament"/>, pas de récurrence). Recliquer le même statut le retire.</summary>
+    private async Task ToggleAttendance(CalendarEvent e, AttendanceStatus status)
     {
-        if (!CanManage || quickEditEvent is null || quickEditEvent.TrainingId is not { } trainingId) return;
+        if (!CanManage) return;
 
-        var existing = await Db.TrainingAttendances.FirstOrDefaultAsync(a => a.TrainingId == trainingId && a.Date == quickEditEvent.Date);
-        if (existing is not null && existing.Status == status)
+        if (e.Kind == CalendarEventKind.Training)
         {
-            Db.TrainingAttendances.Remove(existing);
-            quickEditEvent.AttendanceStatus = null;
-        }
-        else if (existing is not null)
-        {
-            existing.Status = status;
-            quickEditEvent.AttendanceStatus = status;
+            if (e.TrainingId is not { } trainingId) return;
+
+            var existing = await Db.TrainingAttendances.FirstOrDefaultAsync(a => a.TrainingId == trainingId && a.Date == e.Date);
+            if (existing is not null && existing.Status == status)
+            {
+                Db.TrainingAttendances.Remove(existing);
+                e.AttendanceStatus = null;
+            }
+            else if (existing is not null)
+            {
+                existing.Status = status;
+                e.AttendanceStatus = status;
+            }
+            else
+            {
+                Db.TrainingAttendances.Add(new TrainingAttendance { TrainingId = trainingId, Date = e.Date, Status = status });
+                e.AttendanceStatus = status;
+            }
+
+            var listed = events.FirstOrDefault(ev => ev.TrainingId == trainingId && ev.Date == e.Date);
+            if (listed is not null) listed.AttendanceStatus = e.AttendanceStatus;
         }
         else
         {
-            Db.TrainingAttendances.Add(new TrainingAttendance { TrainingId = trainingId, Date = quickEditEvent.Date, Status = status });
-            quickEditEvent.AttendanceStatus = status;
+            if (e.TournamentId is not { } tournamentId) return;
+            var tournament = await Db.Tournaments.FindAsync(tournamentId);
+            if (tournament is null) return;
+
+            tournament.AttendanceStatus = tournament.AttendanceStatus == status ? null : status;
+            e.AttendanceStatus = tournament.AttendanceStatus;
         }
+
         await Db.SaveChangesAsync();
-
-        var listed = events.FirstOrDefault(ev => ev.TrainingId == trainingId && ev.Date == quickEditEvent.Date);
-        if (listed is not null) listed.AttendanceStatus = quickEditEvent.AttendanceStatus;
-
         await OnAttendanceChanged.InvokeAsync();
     }
-
-    private static string AttendanceLabel(TrainingAttendanceStatus status) => status switch
-    {
-        TrainingAttendanceStatus.Present => "Présent",
-        TrainingAttendanceStatus.Excused => "Excusé",
-        TrainingAttendanceStatus.Absent => "Absent",
-        _ => ""
-    };
-
-    private static string AttendanceCssClass(TrainingAttendanceStatus status) => status switch
-    {
-        TrainingAttendanceStatus.Present => "present",
-        TrainingAttendanceStatus.Excused => "excused",
-        TrainingAttendanceStatus.Absent => "absent",
-        _ => ""
-    };
 
     private async Task CancelEvent(CalendarEvent e)
     {

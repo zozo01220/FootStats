@@ -5,6 +5,7 @@
 @inject NavigationManager Navigation
 @inject CurrentUserService CurrentUser
 @inject ConfirmService Confirm
+@inject StatsService Stats
 
 <PageTitle>Saisons - FootStats</PageTitle>
 
@@ -185,6 +186,7 @@
     private List<Season> seasons = [];
     private List<Season> currentSeasons = [];
     private List<Season> pastSeasons = [];
+    private Dictionary<int, SeasonAttendanceStats> seasonPresence = new();
     private List<Club> clubs = [];
     private List<Player> players = [];
     private SeasonForm form = new();
@@ -264,6 +266,54 @@
 
         currentSeasons = seasons.Where(s => !s.IsArchived).ToList();
         pastSeasons = seasons.Where(s => s.IsArchived).ToList();
+
+        await LoadSeasonPresenceAsync();
+    }
+
+    /// <summary>Taux de présence de chaque saison en cours, entraînements pointés (<see
+    /// cref="StatsService.GetSeasonAttendanceAsync"/>) et tournois/plateaux pointés (<see
+    /// cref="Tournament.AttendanceStatus"/>) confondus. Absente du dictionnaire si rien n'a été pointé, pour ne
+    /// pas afficher un taux fabriqué.</summary>
+    private async Task LoadSeasonPresenceAsync()
+    {
+        seasonPresence.Clear();
+        if (currentSeasons.Count == 0) return;
+
+        var seasonIds = currentSeasons.Select(s => s.Id).ToList();
+        var tournamentAttendanceBySeasonId = (await Db.Tournaments
+            .Where(t => seasonIds.Contains(t.SeasonId) && t.AttendanceStatus != null)
+            .Select(t => new { t.SeasonId, t.AttendanceStatus })
+            .ToListAsync())
+            .ToLookup(t => t.SeasonId);
+
+        foreach (var season in currentSeasons)
+        {
+            var recorded = 0;
+            var present = 0;
+
+            var stats = await Stats.GetSeasonAttendanceAsync(season.Id);
+            if (stats is not null)
+            {
+                recorded += stats.RecordedCount;
+                present += stats.PresentCount;
+            }
+
+            foreach (var t in tournamentAttendanceBySeasonId[season.Id])
+            {
+                recorded++;
+                if (t.AttendanceStatus == AttendanceStatus.Present) present++;
+            }
+
+            if (recorded > 0)
+            {
+                seasonPresence[season.Id] = new SeasonAttendanceStats
+                {
+                    RecordedCount = recorded,
+                    PresentCount = present,
+                    Percentage = Math.Round(present * 100.0 / recorded, 0)
+                };
+            }
+        }
     }
 
     private async Task AddSeason()
@@ -457,6 +507,20 @@
                     <span class="muted">Club inconnu</span>
                 }
             </div>
+            @if (seasonPresence.TryGetValue(season.Id, out var presence) && presence.Percentage is not null)
+            {
+                <div class="presence-row">
+                    <svg viewBox="0 0 36 36" width="34" height="34">
+                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--line)" stroke-width="3"></path>
+                        <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="var(--gold)" stroke-width="3" stroke-linecap="round" stroke-dasharray="@(presence.Percentage) 100"></path>
+                        <text x="18" y="20.8" font-size="10" font-weight="700" text-anchor="middle" fill="var(--ink)">@(presence.Percentage)%</text>
+                    </svg>
+                    <div class="presence-label-col">
+                        <span class="presence-label">Présence</span>
+                        <span class="presence-sub">@presence.RecordedCount séance@(presence.RecordedCount > 1 ? "s" : "") pointée@(presence.RecordedCount > 1 ? "s" : "")</span>
+                    </div>
+                </div>
+            }
             @if (canManage)
             {
                 <div class="card-actions-row">

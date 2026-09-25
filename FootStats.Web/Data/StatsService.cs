@@ -81,7 +81,7 @@ public class StatsService(AppDbContext db)
                 if (attendanceByKey.TryGetValue((training.Id, date), out var attendance))
                 {
                     recorded++;
-                    if (attendance.Status == TrainingAttendanceStatus.Present) present++;
+                    if (attendance.Status == AttendanceStatus.Present) present++;
                 }
             }
         }

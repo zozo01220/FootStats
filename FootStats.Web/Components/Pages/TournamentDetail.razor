@@ -35,6 +35,17 @@ else
                 <PlayerBadge Player="tournament.Season?.Player" Club="eventClub" />
             </h1>
             <div style="font-size: 15px; color: var(--muted);">@tournament.City &middot; @tournament.Date.ToString("dd.MM.yyyy")</div>
+            @if (canManage)
+            {
+                <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                    <span style="font-size: 12.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;">Présence</span>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="attendance-pick present @(tournament.AttendanceStatus == AttendanceStatus.Present ? "selected" : "")" @onclick="() => ToggleAttendance(AttendanceStatus.Present)">Présent</button>
+                        <button type="button" class="attendance-pick excused @(tournament.AttendanceStatus == AttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleAttendance(AttendanceStatus.Excused)">Excusé</button>
+                        <button type="button" class="attendance-pick absent @(tournament.AttendanceStatus == AttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleAttendance(AttendanceStatus.Absent)">Absent</button>
+                    </div>
+                </div>
+            }
         </div>
 
         <div class="card">
@@ -354,6 +365,15 @@ else
             eventClub = ClubTimelineHelper.ClubAt(memberships, tournament.Date, tournament.Season.Club);
             form.Position = tournament.Season.Player?.Position ?? "";
         }
+    }
+
+    /// <summary>Pointe la présence sur l'entité <see cref="Tournament"/> elle-même (pas de table à part comme
+    /// <see cref="TrainingAttendance"/> : un tournoi n'est pas récurrent). Recliquer le même statut le retire.</summary>
+    private async Task ToggleAttendance(AttendanceStatus status)
+    {
+        if (!canManage || tournament is null) return;
+        tournament.AttendanceStatus = tournament.AttendanceStatus == status ? null : status;
+        await Db.SaveChangesAsync();
     }
 
     private async Task AddMatch()

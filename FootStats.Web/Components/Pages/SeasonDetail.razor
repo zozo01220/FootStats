@@ -3,6 +3,7 @@
 @rendermode InteractiveServer
 @inject AppDbContext Db
 @inject StatsService Stats
+@inject CalendarService Calendar
 @inject NavigationManager Navigation
 @inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
@@ -210,7 +211,59 @@ else
                 }
             </div>
 
-            <AgendaView @ref="agendaView" SeasonId="Id" CanManage="canManage" OnAttendanceChanged="ReloadAttendance" />
+            @if (nextEvent is not null)
+            {
+                <details class="collapsible" open>
+                    <summary>
+                        <span class="section-title" style="margin-bottom: 0;">
+                            <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                            Prochain événement
+                        </span>
+                        <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+                    </summary>
+                    <div class="next-event-card">
+                        <div class="next-event-head">
+                            <span class="pill event-tint @NextEventTypeClass(nextEvent)">
+                                <span class="event-dot @NextEventTypeClass(nextEvent)"></span>@NextEventTypeLabel(nextEvent)
+                            </span>
+                            <span class="next-event-relative">@NextEventRelativeLabel(nextEvent.Date)</span>
+                        </div>
+                        <div class="next-event-title">@nextEvent.Title</div>
+                        <div class="next-event-line">
+                            <svg viewBox="0 0 24 24" class="icon"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                            <span>@nextEvent.Date.ToString("dd.MM.yyyy")@(nextEvent.StartTime is { } t ? $" · {t:HH:mm}" : "")</span>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(nextEvent.Location))
+                        {
+                            <div class="next-event-line">
+                                <svg viewBox="0 0 24 24" class="icon"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                                <span>@nextEvent.Location</span>
+                            </div>
+                        }
+                        @if (canManage)
+                        {
+                            <div class="next-event-divider next-event-attendance-row">
+                                <button type="button" class="attendance-pick present @(nextEvent.AttendanceStatus == AttendanceStatus.Present ? "selected" : "")" @onclick="() => ToggleNextEventAttendance(AttendanceStatus.Present)">Présent</button>
+                                <button type="button" class="attendance-pick excused @(nextEvent.AttendanceStatus == AttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleNextEventAttendance(AttendanceStatus.Excused)">Excusé</button>
+                                <button type="button" class="attendance-pick absent @(nextEvent.AttendanceStatus == AttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleNextEventAttendance(AttendanceStatus.Absent)">Absent</button>
+                            </div>
+                        }
+                    </div>
+                </details>
+            }
+
+            <details class="collapsible" open style="margin-top: 18px;">
+                <summary>
+                    <span class="section-title" style="margin-bottom: 0;">
+                        <svg viewBox="0 0 24 24" class="icon" style="color: var(--gold-dark);"><rect x="3" y="4" width="18" height="17" rx="2"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+                        Agenda
+                    </span>
+                    <svg viewBox="0 0 24 24" class="icon chevron"><path d="M6 9l6 6 6-6"></path></svg>
+                </summary>
+                <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 20px;">
+                    <AgendaView @ref="agendaView" SeasonId="Id" CanManage="canManage" OnAttendanceChanged="ReloadAttendance" />
+                </div>
+            </details>
 
             <Modal @ref="tournamentCreateModal" Label="Nouvel événement">
                 <Subtitle>
@@ -430,6 +483,7 @@ else
     // Football / Basketball
     private SeasonStats? stats;
     private SeasonAttendanceStats? attendance;
+    private CalendarEvent? nextEvent;
     private TournamentForm form = new();
     private Modal? tournamentCreateModal;
 
@@ -492,7 +546,20 @@ else
         {
             stats = await Stats.GetSeasonStatsAsync(Id);
             attendance = await Stats.GetSeasonAttendanceAsync(Id);
+            await LoadNextEventAsync();
         }
+    }
+
+    /// <summary>Le prochain événement à venir (tournoi, plateau ou entraînement) de cette saison, tous types
+    /// confondus — fenêtre de 90 jours, largement suffisante puisque les entraînements sont récurrents.</summary>
+    private async Task LoadNextEventAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var events = await Calendar.GetEventsAsync(today, today.AddDays(90));
+        nextEvent = events
+            .Where(e => e.SeasonId == Id && !e.IsCancelled)
+            .OrderBy(e => e.Date).ThenBy(e => e.StartTime)
+            .FirstOrDefault();
     }
 
     private void OpenRenewSeason()
@@ -640,6 +707,7 @@ else
         });
         await Db.SaveChangesAsync();
         trainingCreateModal?.Close();
+        await LoadNextEventAsync();
         await (agendaView?.ReloadAsync() ?? Task.CompletedTask);
     }
 
@@ -694,6 +762,7 @@ else
         });
         await Db.SaveChangesAsync();
         recurringTrainingCreateModal?.Close();
+        await LoadNextEventAsync();
         await (agendaView?.ReloadAsync() ?? Task.CompletedTask);
     }
 
@@ -786,7 +855,70 @@ else
     private async Task ReloadAttendance()
     {
         attendance = await Stats.GetSeasonAttendanceAsync(Id);
+        await LoadNextEventAsync();
     }
+
+    /// <summary>Pointe la présence au prochain événement affiché dans le widget — entraînement (table
+    /// <see cref="TrainingAttendance"/>, une ligne par occurrence) ou tournoi/plateau (champ direct sur
+    /// <see cref="Tournament"/>, pas de récurrence). Recliquer le même statut le retire.</summary>
+    private async Task ToggleNextEventAttendance(AttendanceStatus status)
+    {
+        if (!canManage || nextEvent is null) return;
+
+        if (nextEvent.Kind == CalendarEventKind.Training)
+        {
+            if (nextEvent.TrainingId is not { } trainingId) return;
+            var existing = await Db.TrainingAttendances.FirstOrDefaultAsync(a => a.TrainingId == trainingId && a.Date == nextEvent.Date);
+            if (existing is not null && existing.Status == status)
+            {
+                Db.TrainingAttendances.Remove(existing);
+                nextEvent.AttendanceStatus = null;
+            }
+            else if (existing is not null)
+            {
+                existing.Status = status;
+                nextEvent.AttendanceStatus = status;
+            }
+            else
+            {
+                Db.TrainingAttendances.Add(new TrainingAttendance { TrainingId = trainingId, Date = nextEvent.Date, Status = status });
+                nextEvent.AttendanceStatus = status;
+            }
+        }
+        else
+        {
+            if (nextEvent.TournamentId is not { } tournamentId) return;
+            var tournament = await Db.Tournaments.FindAsync(tournamentId);
+            if (tournament is null) return;
+            tournament.AttendanceStatus = tournament.AttendanceStatus == status ? null : status;
+            nextEvent.AttendanceStatus = tournament.AttendanceStatus;
+        }
+        await Db.SaveChangesAsync();
+
+        await ReloadAttendance();
+        if (agendaView is not null) await agendaView.ReloadAsync();
+    }
+
+    private static string NextEventRelativeLabel(DateOnly date)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var days = date.DayNumber - today.DayNumber;
+        return days switch
+        {
+            0 => "Aujourd'hui",
+            1 => "Demain",
+            > 1 and < 7 => $"Dans {days} jours",
+            _ => date.ToString("dd.MM.yyyy")
+        };
+    }
+
+    private static string NextEventTypeClass(CalendarEvent e) => e.Kind == CalendarEventKind.Training
+        ? "type-training"
+        : (e.EventType == EventType.Tournoi ? "type-tournoi" : "type-plateau");
+
+    private static string NextEventTypeLabel(CalendarEvent e) => e.Kind == CalendarEventKind.Training
+        ? "Entraînement"
+        : (e.EventType == EventType.Tournoi ? "Tournoi" : "Plateau");
 
     private Club? EventClub(DateOnly date) => ClubTimelineHelper.ClubAt(memberships, date, season?.Club);
 

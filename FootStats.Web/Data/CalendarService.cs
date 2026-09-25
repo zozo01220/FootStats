@@ -56,7 +56,8 @@ public class CalendarService(AppDbContext db, CurrentUserService currentUser)
                 Category = season.Category,
                 SeasonId = t.SeasonId,
                 TournamentId = t.Id,
-                MatchCount = t.Matches.Count
+                MatchCount = t.Matches.Count,
+                AttendanceStatus = t.AttendanceStatus
             });
         }
 
