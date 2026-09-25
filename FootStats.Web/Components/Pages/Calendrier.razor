@@ -93,8 +93,7 @@
                             <div class="cal-day-num">@day.Day</div>
                             @foreach (var e in dayEvents.Take(2))
                             {
-                                <div class="cal-chip event-tint @TypeClass(e) @CancelledClasses(e)" @onclick="() => GoToEvent(e)" title="@ChipTitle(e)">
-                                    <span class="event-dot @TypeClass(e)"></span>
+                                <div class="cal-chip event-tint @TypeClass(e) @CancelledClasses(e) @AttendanceClasses(e)" @onclick="() => GoToEvent(e)" title="@ChipTitle(e)">
                                     <span class="club-badge-mini-xs">
                                         @if (!string.IsNullOrEmpty(e.ClubLogoPath))
                                         {
@@ -138,7 +137,7 @@
                             {
                                 @foreach (var e in dayEvents)
                                 {
-                                    <div class="week-item event-tint @TypeClass(e) @CancelledClasses(e)" @onclick="() => GoToEvent(e)">
+                                    <div class="week-item event-tint @TypeClass(e) @CancelledClasses(e) @AttendanceClasses(e)" @onclick="() => GoToEvent(e)">
                                         <div class="week-item-top">
                                             <span class="club-badge-mini-xs">
                                                 @if (!string.IsNullOrEmpty(e.ClubLogoPath))
@@ -442,7 +441,7 @@
 
     <Modal @ref="trainingManageModal" Label="Entraînements récurrents">
         <Subtitle>
-            <span class="pill pill-gold" style="margin-left: 8px;">@trainings.Count</span>
+            <span class="pill pill-gold">@trainings.Count</span>
         </Subtitle>
         <ChildContent>
             @if (trainings.Count == 0)
@@ -1108,6 +1107,13 @@
     private static string CancelledClasses(CalendarEvent e) => e.IsCancelled
         ? $"event-cancelled {(e.CancellationReason is { } r ? TrainingOccurrenceHelper.CancellationReasonCssClass(r) : "")}"
         : "";
+
+    private static string AttendanceClasses(CalendarEvent e) => e.AttendanceStatus switch
+    {
+        AttendanceStatus.Excused => "attendance-excused",
+        AttendanceStatus.Absent => "attendance-absent",
+        _ => ""
+    };
 
     private static string ChipLabel(CalendarEvent e) => e.Kind == CalendarEventKind.Training ? "Entraînement" : e.Title;
 
