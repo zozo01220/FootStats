@@ -29,5 +29,9 @@ public class Tournament
     /// <see cref="TrainingAttendance"/>) puisqu'un tournoi n'est pas récurrent : une ligne = un événement.</summary>
     public AttendanceStatus? AttendanceStatus { get; set; }
 
+    /// <summary>Masque le bloc "Événement en cours" de l'accueil une fois cliqué sur "Événement terminé" (suivi
+    /// live, mobile uniquement), sans affecter les matchs ni les statistiques déjà enregistrés.</summary>
+    public bool DismissedFromHome { get; set; }
+
     public List<MatchRecord> Matches { get; set; } = [];
 }

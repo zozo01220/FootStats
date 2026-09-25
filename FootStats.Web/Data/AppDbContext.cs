@@ -11,6 +11,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<Tournament> Tournaments => Set<Tournament>();
     public DbSet<MatchRecord> Matches => Set<MatchRecord>();
+    public DbSet<MatchEvent> MatchEvents => Set<MatchEvent>();
+    public DbSet<MatchShareLink> MatchShareLinks => Set<MatchShareLink>();
     public DbSet<Training> Trainings => Set<Training>();
     public DbSet<TrainingOccurrenceOverride> TrainingOccurrenceOverrides => Set<TrainingOccurrenceOverride>();
     public DbSet<TrainingAttendance> TrainingAttendances => Set<TrainingAttendance>();
@@ -65,6 +67,24 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .WithMany(t => t.Matches)
             .HasForeignKey(m => m.TournamentId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MatchEvent>()
+            .HasOne(e => e.MatchRecord)
+            .WithMany(m => m.Events)
+            .HasForeignKey(e => e.MatchRecordId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MatchShareLink>()
+            .HasOne(s => s.Tournament)
+            .WithMany()
+            .HasForeignKey(s => s.TournamentId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<MatchShareLink>()
+            .HasOne(s => s.CreatedByUser)
+            .WithMany()
+            .HasForeignKey(s => s.CreatedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         modelBuilder.Entity<Training>()
             .HasOne(t => t.Season)

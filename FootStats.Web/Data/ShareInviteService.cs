@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Web;
 using FootStats.Web.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace FootStats.Web.Data;
@@ -29,11 +30,21 @@ public enum ShareInviteAttachError
 /// Utilisateurs) : le rôle et les enfants concernés sont figés à la création du lien, avant même qu'un compte
 /// existe pour le destinataire. Miroir simplifié d'<see cref="InvitationService"/>, mais sans job de relance
 /// automatique (l'email n'est envoyé qu'une fois, à la demande explicite de l'Admin).</summary>
-public class ShareInviteService(AppDbContext db, IEmailSender emailSender, IConfiguration config)
+public class ShareInviteService(AppDbContext db, IEmailSender emailSender, IConfiguration config, IHttpContextAccessor httpContextAccessor)
 {
     private const int ExpiryHours = 72;
 
-    private string BaseUrl => (config["App:BaseUrl"] ?? "https://kids.familleprieur01.duckdns.org").TrimEnd('/');
+    /// <summary>Dérivée de la requête en cours quand elle existe (dev comme prod, quel que soit le domaine réel
+    /// vu par nginx), sinon repliée sur App:BaseUrl (utile pour les services d'arrière-plan sans requête HTTP).</summary>
+    private string BaseUrl
+    {
+        get
+        {
+            var request = httpContextAccessor.HttpContext?.Request;
+            if (request is not null) return $"{request.Scheme}://{request.Host}";
+            return (config["App:BaseUrl"] ?? "https://footstats.lok-izy.fr").TrimEnd('/');
+        }
+    }
 
     public async Task<(ShareInvite Invite, string RawToken)> CreateAsync(int adminId, UserRole role, List<int> playerIds, string? relationship)
     {

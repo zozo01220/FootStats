@@ -3,6 +3,7 @@ using System;
 using FootStats.Web.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FootStats.Web.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260925115418_AddLiveMatchTracking")]
+    partial class AddLiveMatchTracking
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.9");
@@ -350,18 +353,18 @@ namespace FootStats.Web.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("MatchRecordId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("TournamentId")
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
 
-                    b.HasIndex("TournamentId");
+                    b.HasIndex("MatchRecordId");
 
                     b.ToTable("MatchShareLinks");
                 });
@@ -808,15 +811,15 @@ namespace FootStats.Web.Migrations
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("FootStats.Web.Models.Tournament", "Tournament")
+                    b.HasOne("FootStats.Web.Models.MatchRecord", "MatchRecord")
                         .WithMany()
-                        .HasForeignKey("TournamentId")
+                        .HasForeignKey("MatchRecordId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("CreatedByUser");
 
-                    b.Navigation("Tournament");
+                    b.Navigation("MatchRecord");
                 });
 
             modelBuilder.Entity("FootStats.Web.Models.Player", b =>

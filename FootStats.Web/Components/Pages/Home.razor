@@ -47,6 +47,19 @@
             <div class="onboard-foot">Une fois les deux prêts, le bouton <b>+</b> en bas à droite permet de créer la première saison.</div>
         </div>
     }
+    @if (todaysLiveEvents.Count > 0)
+    {
+        @foreach (var tournament in todaysLiveEvents)
+        {
+            <div class="home-live-banner" @onclick="() => GoToTournament(tournament.Id)">
+                <button type="button" class="home-live-dismiss" @onclick:stopPropagation="true" @onclick="() => DismissLiveEvent(tournament)">Événement terminé</button>
+                <div class="live-label"><span class="live-dot"></span>ÉVÉNEMENT EN COURS</div>
+                <div class="live-title">@(tournament.Name ?? tournament.EventType.ToString())</div>
+                <div class="live-meta">@tournament.City &middot; @tournament.Season?.Player?.FirstName @tournament.Season?.Player?.LastName</div>
+                <div class="live-cta">Ouvrir →</div>
+            </div>
+        }
+    }
     @if (!needsSetup)
     {
     <details class="collapsible" open>
@@ -206,6 +219,8 @@
         sharePanel?.Reset();
         shareModal?.Open();
     }
+    private List<Tournament> todaysLiveEvents = [];
+
     private bool needsSetup => players.Count == 0 || myClubIds.Count == 0;
     private HashSet<int> myClubIds = [];
     private HashSet<int> visiblePlayerIds = [];
@@ -268,6 +283,38 @@
         pastSeasons = seasons.Where(s => s.IsArchived).ToList();
 
         await LoadSeasonPresenceAsync();
+        await LoadTodaysLiveEventsAsync();
+    }
+
+    /// <summary>Bloc "Événement en cours" de l'accueil (suivi live, mobile uniquement — voir CLAUDE.md) : un
+    /// tournoi/plateau d'un joueur visible dont la date est aujourd'hui, tant qu'il n'a pas été masqué via
+    /// "Événement terminé".</summary>
+    private async Task LoadTodaysLiveEventsAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        todaysLiveEvents = await Db.Tournaments
+            .Include(t => t.Season).ThenInclude(s => s!.Player)
+            .Where(t => visiblePlayerIds.Contains(t.Season!.PlayerId) && t.Date == today && !t.DismissedFromHome)
+            .ToListAsync();
+    }
+
+    private async Task DismissLiveEvent(Tournament tournament)
+    {
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Terminer l'événement",
+            Message = "Le bloc disparaîtra de l'accueil. Les matchs déjà saisis restent enregistrés et modifiables depuis la fiche.",
+            ConfirmLabel = "Terminer",
+            Icon = ConfirmIcon.Power,
+            SubjectName = tournament.Name ?? tournament.EventType.ToString(),
+            SubjectMeta = $"{tournament.City} · {tournament.Date:dd.MM.yyyy}"
+        })) return;
+
+        var entity = await Db.Tournaments.FindAsync(tournament.Id);
+        if (entity is null) return;
+        entity.DismissedFromHome = true;
+        await Db.SaveChangesAsync();
+        await LoadTodaysLiveEventsAsync();
     }
 
     /// <summary>Taux de présence de chaque saison en cours, entraînements pointés (<see
@@ -439,6 +486,8 @@
     }
 
     private void GoToSeason(int id) => Navigation.NavigateTo($"/seasons/{id}");
+
+    private void GoToTournament(int id) => Navigation.NavigateTo($"/tournaments/{id}");
 
     private static bool TryParseMonth(string? value, out DateTime date) => SeasonLabelHelper.TryParseMonth(value, out date);
 

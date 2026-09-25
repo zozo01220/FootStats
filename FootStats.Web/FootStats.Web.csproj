@@ -5,7 +5,23 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>9e5f7639-0368-4704-834f-f33426f397ce</UserSecretsId>
+    <Version>1.0.0</Version>
   </PropertyGroup>
+
+  <!--
+    Ajoute le hash git court à la version informationnelle (ex. 1.0.0+a1b2c3d), pour pouvoir vérifier
+    depuis l'app quelle révision tourne réellement en prod après un déploiement. Sans effet si git n'est
+    pas disponible au moment du build (la version reste alors simplement "1.0.0").
+  -->
+  <Target Name="SetSourceRevisionId" BeforeTargets="GetAssemblyVersion;GenerateNuspec" Condition="'$(SourceRevisionId)' == ''">
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="True" IgnoreExitCode="True" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="SourceRevisionId" />
+      <Output TaskParameter="ExitCode" PropertyName="GitExitCode" />
+    </Exec>
+    <PropertyGroup Condition="'$(GitExitCode)' != '0'">
+      <SourceRevisionId></SourceRevisionId>
+    </PropertyGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />

@@ -1,0 +1,207 @@
+@page "/suivi/{Token}"
+@attribute [AllowAnonymous]
+@layout Layout.EmptyLayout
+@rendermode InteractiveServer
+@implements IDisposable
+@inject MatchShareLinkService ShareLinkSvc
+@inject LiveMatchNotifier Notifier
+
+<PageTitle>Suivi en direct - FootStats</PageTitle>
+
+<div class="app-shell">
+    <div class="topbar">
+        <span style="font-family: var(--font-display); font-size: 18px; color: var(--gold); letter-spacing: 0.03em;">FOOT<span style="color: #fff;">STATS</span></span>
+        @if (tournament is not null)
+        {
+            <span class="guest-badge">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"></path><circle cx="10" cy="7" r="4"></circle></svg>
+                Suivi invité
+            </span>
+        }
+    </div>
+
+    @if (tournament is not null)
+    {
+        var ended = !tournament.Matches.Any(m => m.IsLive);
+        <div class="guest-expiry-banner @(ended ? "ended" : "")">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9.5"></circle><path d="M12 8v4l3 2"></path></svg>
+            <span>Lien valide jusqu'au @expiresAt.ToString("dd.MM à HH:mm")</span>
+        </div>
+    }
+
+    <main>
+        <div class="container" style="max-width: 480px;">
+            @if (state == MatchShareTokenState.NotFound)
+            {
+                <p class="empty-note">Ce lien de suivi est invalide.</p>
+            }
+            else if (state == MatchShareTokenState.Expired)
+            {
+                <p class="empty-note">Ce lien de suivi a expiré. Demandez-en un nouveau à la personne qui vous l'a envoyé.</p>
+            }
+            else if (tournament is not null)
+            {
+                <div style="margin-bottom: 14px;">
+                    <div style="font-size: 12px; color: var(--muted);">Vous suivez</div>
+                    <div style="font-weight: 700; font-size: 16px;">@playerName — @(tournament.Name ?? tournament.EventType.ToString())</div>
+                    <div style="font-size: 12px; color: var(--muted);">@tournament.City &middot; @tournament.Date.ToString("dd.MM.yyyy")</div>
+                </div>
+
+                @if (tournament.Matches.Count == 0)
+                {
+                    <p class="empty-note">Aucun match pour l'instant.</p>
+                }
+
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    @foreach (var match in tournament.Matches.OrderByDescending(m => m.IsLive).ThenByDescending(m => m.StartedAt))
+                    {
+                        <div class="guest-scoreboard @(match.IsLive ? "" : "finished")" style="@(match.IsLive ? "" : "background: #fff; color: var(--ink); box-shadow: none; border: 1px solid var(--line);")">
+                            <div style="display: flex; align-items: center; gap: 7px;">
+                                @if (match.IsLive)
+                                {
+                                    <span class="live-dot"></span>
+                                    <span style="font-family: var(--font-display); font-size: 13px; letter-spacing: 0.06em; color: var(--gold);">EN COURS</span>
+                                    <span style="margin-left: auto; font-family: var(--font-display); font-size: 20px;">@ElapsedLabel(match)</span>
+                                }
+                                else if (match.EndedAt is not null)
+                                {
+                                    <span class="guest-result-badge @MatchResultClass(match)">@MatchResultLabel(match)</span>
+                                }
+                                else
+                                {
+                                    <span style="padding: 4px 10px; border-radius: 20px; background: rgba(114,111,102,0.1); color: var(--muted); font-size: 11px; font-weight: 700;">À venir</span>
+                                }
+                            </div>
+                            <div style="font-size: 13px; font-weight: 600; @(match.IsLive ? "color: rgba(255,255,255,0.85);" : "color: var(--muted);")">Contre @match.Opponent</div>
+                            <div class="guest-score @(!match.IsLive && match.EndedAt is not null ? MatchResultClass(match) : "")" style="font-size: 30px; @(match.IsLive ? "" : "color: var(--ink);")">@match.TeamGoalsFor – @match.TeamGoalsAgainst</div>
+
+                            @if (match.Events.Count > 0)
+                            {
+                                <div style="display: flex; flex-direction: column; @(match.IsLive ? "" : "border-top: 1px solid var(--line); padding-top: 8px;")">
+                                    @foreach (var ev in match.Events.OrderByDescending(e => e.MinuteMark).ThenByDescending(e => e.OccurredAt))
+                                    {
+                                        var highlight = ev.Type is MatchEventType.Goal or MatchEventType.Assist or MatchEventType.TeammateGoal;
+                                        <div style="display: flex; gap: 10px; padding: 5px 0; font-size: 12.5px; @(match.IsLive ? "color: rgba(255,255,255,0.85);" : "")">
+                                            <span style="font-family: var(--font-display); font-size: 13px; width: 28px; flex-shrink: 0; @(highlight ? (match.IsLive ? "color: var(--gold);" : "color: var(--gold-dark);") : "")">@ev.MinuteMark'</span>
+                                            <span style="font-weight: @(highlight ? "700" : "400");">@EventLabel(ev, match)</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                @if (tournament.Matches.Any(m => m.IsLive))
+                {
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 7px; padding-top: 14px;">
+                        <span class="live-dot"></span>
+                        <span style="font-size: 11px; color: var(--muted);">Page actualisée automatiquement</span>
+                    </div>
+                }
+            }
+        </div>
+    </main>
+</div>
+
+@code {
+    [Parameter] public string Token { get; set; } = "";
+
+    private MatchShareTokenState state;
+    private Tournament? tournament;
+    private DateTime expiresAt;
+    private string playerName = "";
+    private PeriodicTimer? liveTimer;
+    private CancellationTokenSource? liveTimerCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        Notifier.TournamentChanged += OnTournamentChanged;
+    }
+
+    private async Task LoadAsync()
+    {
+        var result = await ShareLinkSvc.ValidateTokenAsync(Token);
+        state = result.State;
+        tournament = result.Tournament;
+        expiresAt = result.ExpiresAt ?? DateTime.UtcNow;
+        playerName = tournament?.Season?.Player is { } p ? $"{p.FirstName} {p.LastName}" : "";
+        EnsureLiveTimer();
+    }
+
+    /// <summary>Réagit à toute modification du tournoi suivi, y compris l'ajout ou la suppression d'un match
+    /// (pas seulement une mise à jour d'un match déjà connu de cette page) : voir <see cref="LiveMatchNotifier"/>.</summary>
+    private void OnTournamentChanged(int tournamentId)
+    {
+        if (tournament?.Id != tournamentId) return;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private void EnsureLiveTimer()
+    {
+        var isLive = tournament?.Matches.Any(m => m.IsLive) == true;
+        if (isLive && liveTimer is null)
+        {
+            liveTimerCts = new CancellationTokenSource();
+            liveTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            _ = RunLiveTimerAsync(liveTimer, liveTimerCts.Token);
+        }
+        else if (!isLive && liveTimer is not null)
+        {
+            liveTimerCts?.Cancel();
+            liveTimer.Dispose();
+            liveTimer = null;
+        }
+    }
+
+    private async Task RunLiveTimerAsync(PeriodicTimer timer, CancellationToken token)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private static string MatchResultClass(MatchRecord m) =>
+        m.TeamGoalsFor > m.TeamGoalsAgainst ? "win" : m.TeamGoalsFor < m.TeamGoalsAgainst ? "loss" : "draw";
+
+    private static string MatchResultLabel(MatchRecord m) =>
+        m.TeamGoalsFor > m.TeamGoalsAgainst ? "Victoire" : m.TeamGoalsFor < m.TeamGoalsAgainst ? "Défaite" : "Nul";
+
+    private static string ElapsedLabel(MatchRecord m)
+    {
+        if (m.StartedAt is null) return "00:00";
+        var elapsed = (m.EndedAt ?? DateTime.UtcNow) - m.StartedAt.Value;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        return $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+    }
+
+    private string EventLabel(MatchEvent ev, MatchRecord match) => ev.Type switch
+    {
+        MatchEventType.Kickoff => "Coup d'envoi",
+        MatchEventType.Goal => $"But — {playerName}",
+        MatchEventType.Assist => $"Passe décisive — {playerName}",
+        MatchEventType.TeammateGoal => "But de l'équipe",
+        MatchEventType.OpponentGoal => $"But encaissé — {match.Opponent}",
+        MatchEventType.PlayerIn => $"{playerName} entre en jeu",
+        MatchEventType.PlayerOut => $"{playerName} sort du terrain",
+        MatchEventType.FullTime => "Coup de sifflet final",
+        _ => ""
+    };
+
+    public void Dispose()
+    {
+        Notifier.TournamentChanged -= OnTournamentChanged;
+        liveTimerCts?.Cancel();
+        liveTimer?.Dispose();
+    }
+}

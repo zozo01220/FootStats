@@ -1,10 +1,14 @@
 @page "/tournaments/{Id:int}"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@implements IDisposable
 @inject AppDbContext Db
 @inject NavigationManager Navigation
 @inject ConfirmService Confirm
 @inject CurrentUserService CurrentUser
+@inject LiveMatchNotifier Notifier
+@inject MatchShareLinkService ShareLinkSvc
+@inject IJSRuntime JS
 
 <PageTitle>@(tournament?.Name ?? tournament?.EventType.ToString()) - FootStats</PageTitle>
 
@@ -44,6 +48,13 @@ else
                         <button type="button" class="attendance-pick excused @(tournament.AttendanceStatus == AttendanceStatus.Excused ? "selected" : "")" @onclick="() => ToggleAttendance(AttendanceStatus.Excused)">Excusé</button>
                         <button type="button" class="attendance-pick absent @(tournament.AttendanceStatus == AttendanceStatus.Absent ? "selected" : "")" @onclick="() => ToggleAttendance(AttendanceStatus.Absent)">Absent</button>
                     </div>
+                </div>
+
+                <div class="tournament-live-share" style="margin-top: 10px;">
+                    <button type="button" class="btn btn-secondary btn-share-green" title="Partager le suivi en direct de l'évènement" @onclick="OpenShare">
+                        <svg viewBox="0 0 24 24" class="icon"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.6" y1="10.6" x2="15.4" y2="6.4"></line><line x1="8.6" y1="13.4" x2="15.4" y2="17.6"></line></svg>
+                        <span>Partager</span>
+                    </button>
                 </div>
             }
         </div>
@@ -114,7 +125,14 @@ else
                                             <svg viewBox="0 0 24 24" class="captain-star" style="width: 15px; height: 15px;" title="Capitaine" aria-label="Capitaine"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>
                                         }
                                     </div>
-                                    <span class="mcm-result-tag @MatchResultClass(m)">@MatchResultLabel(m)</span>
+                                    @if (m.IsLive)
+                                    {
+                                        <span class="mcm-result-tag live"><span class="live-dot"></span>EN COURS · @ElapsedLabel(m)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="mcm-result-tag @MatchResultClass(m)">@MatchResultLabel(m)</span>
+                                    }
                                 </div>
                                 <div class="mcm-score">@m.TeamGoalsFor<span class="sep">-</span>@m.TeamGoalsAgainst</div>
                             </div>
@@ -141,6 +159,58 @@ else
                                     </span>
                                 </div>
                             </div>
+
+                            @if (canManage && m.StartedAt is null && tournament.Date == DateOnly.FromDateTime(DateTime.Today))
+                            {
+                                <button type="button" class="live-btn live-btn-start" @onclick="() => OpenStartMatch(m)">▶ Démarrer</button>
+                            }
+
+                            @if (m.IsLive)
+                            {
+                                <div class="mcm-live-panel">
+                                    <div class="mcm-live-chrono">
+                                        <span class="live-label"><span class="live-dot"></span>@ElapsedLabel(m)@(m.DurationMinutes is { } dur ? $" / {dur}'" : "")</span>
+                                        <span>@m.TeamGoalsFor – @m.TeamGoalsAgainst</span>
+                                    </div>
+
+                                    <div class="mcm-onfield-row">
+                                        <span class="mcm-onfield-status @(m.OnField ? "on" : "off")"><span class="dot"></span>@(m.OnField ? "Sur le terrain" : "Sur le banc")</span>
+                                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12.5px; font-weight: 600;">
+                                            Titulaire
+                                            <span class="toggle-switch">
+                                                <input type="checkbox" checked="@m.IsStarter" @onchange="e => SetStarter(m, (bool)e.Value!)" />
+                                                <span class="toggle-slider"></span>
+                                            </span>
+                                        </label>
+                                    </div>
+
+                                    <div class="mcm-live-row">
+                                        <button type="button" class="live-btn live-btn-out" disabled="@(!m.OnField)" @onclick="() => ExitPlayer(m)">Sortir</button>
+                                        <button type="button" class="live-btn live-btn-in" disabled="@m.OnField" @onclick="() => EnterPlayer(m)">Entrer</button>
+                                    </div>
+
+                                    <div class="mcm-live-counts">
+                                        <span>@m.PlayerGoals but(s)</span>
+                                        <span>@m.PlayerAssists passe(s) D.</span>
+                                    </div>
+
+                                    <div class="mcm-live-row">
+                                        <button type="button" class="live-btn live-btn-goal" @onclick="() => AddGoal(m)">+ But @tournament.Season?.Player?.FirstName</button>
+                                        <button type="button" class="live-btn live-btn-assist" @onclick="() => AddAssist(m)">+ Passe D.</button>
+                                    </div>
+                                    <div class="mcm-live-row">
+                                        <button type="button" class="live-btn live-btn-teamgoal" @onclick="() => AddTeamGoal(m)">+ But</button>
+                                        <button type="button" class="live-btn live-btn-opponent" @onclick="() => AddOpponentGoal(m)">+ But adverse</button>
+                                    </div>
+
+                                    <button type="button" class="live-btn live-btn-undo" @onclick="() => UndoLastEvent(m)">
+                                        <svg viewBox="0 0 24 24" class="icon" style="width:14px;height:14px;" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"></path><path d="M3 13a9 9 0 1 0 3-6.7L3 9"></path></svg>
+                                        Annuler la dernière action
+                                    </button>
+
+                                    <button type="button" class="live-btn live-btn-stop" @onclick="() => StopMatch(m)">■ Arrêter le match</button>
+                                </div>
+                            }
 
                             @if (!string.IsNullOrWhiteSpace(m.Note))
                             {
@@ -192,6 +262,10 @@ else
                                 <option>Milieu</option>
                                 <option>Attaquant</option>
                             </select>
+                        </div>
+                        <div class="field" style="margin-bottom: 16px;">
+                            <label>Durée du match (minutes)</label>
+                            <input type="number" min="0" @bind="form.DurationMinutes" placeholder="ex. 60" />
                         </div>
                         <div class="field" style="margin-bottom: 16px;">
                             <label>@scoreWord fils</label>
@@ -268,6 +342,10 @@ else
                     </select>
                 </div>
                 <div class="field" style="margin-bottom: 16px;">
+                    <label>Durée du match (minutes)</label>
+                    <input type="number" min="0" @bind="editForm.DurationMinutes" placeholder="ex. 60" />
+                </div>
+                <div class="field" style="margin-bottom: 16px;">
                     <label>@scoreWord fils</label>
                     <input type="number" min="0" @bind="editForm.PlayerGoals" />
                 </div>
@@ -318,6 +396,61 @@ else
             </EditForm>
         </ChildContent>
     </Modal>
+
+    <Modal @ref="shareModal" Label="Partager le suivi en direct">
+        <ChildContent>
+            @if (shareSuccess)
+            {
+                <p class="empty-note" style="color: var(--pitch); font-weight: 700;">Partagé via WhatsApp.</p>
+            }
+            else
+            {
+                <p class="empty-note" style="margin: -8px 0 14px;">La famille pourra suivre le score sans se connecter, pendant 48h.</p>
+                <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+                    @if (familyMembers.Count == 0)
+                    {
+                        <p class="empty-note">Aucun autre membre de la famille pour l'instant.</p>
+                    }
+                    @foreach (var member in familyMembers)
+                    {
+                        var isChecked = selectedFamilyIds.Contains(member.Id);
+                        <label class="live-family-row @(isChecked ? "selected" : "")">
+                            <input type="checkbox" style="display: none;" checked="@isChecked" @onchange="e => ToggleFamilySelection(member.Id, (bool)e.Value!)" />
+                            <span class="live-family-check">
+                                @if (isChecked)
+                                {
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M20 6L9 17l-5-5"></path></svg>
+                                }
+                            </span>
+                            <span class="live-family-avatar">@PlayerInitials(member.FirstName, member.LastName)</span>
+                            <span>
+                                <div style="font-weight: 700; font-size: 13.5px;">@member.FirstName @member.LastName</div>
+                                @if (!string.IsNullOrWhiteSpace(member.Relationship))
+                                {
+                                    <div style="font-size: 11.5px; color: var(--muted);">@member.Relationship</div>
+                                }
+                            </span>
+                        </label>
+                    }
+                </div>
+                <button type="button" class="live-btn live-btn-whatsapp" style="width: 100%;" disabled="@shareSending" @onclick="ShareViaWhatsApp">
+                    @(shareSending ? "Génération..." : "Partager via WhatsApp")
+                </button>
+            }
+        </ChildContent>
+    </Modal>
+
+    <Modal @ref="startModal" Label="Coup d'envoi">
+        <ChildContent>
+            <p class="empty-note" style="margin: -8px 0 14px;">
+                @(matchToStart?.Opponent is { Length: > 0 } opp ? $"Contre {opp}. " : "")Comment @tournament.Season?.Player?.FirstName démarre-t-il ce match ?
+            </p>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <button type="button" class="live-btn live-btn-start" @onclick="() => ConfirmStartMatch(true)">Titulaire</button>
+                <button type="button" class="live-btn live-btn-in" @onclick="() => ConfirmStartMatch(false)">Remplaçant</button>
+            </div>
+        </ChildContent>
+    </Modal>
 }
 
 @code {
@@ -334,6 +467,17 @@ else
     private bool canManage;
     private bool notFound;
 
+    // Suivi live (mobile uniquement — voir CLAUDE.md) : rafraîchissement cross-circuit et chrono.
+    private Modal? shareModal;
+    private Modal? startModal;
+    private MatchRecord? matchToStart;
+    private List<AppUser> familyMembers = [];
+    private HashSet<int> selectedFamilyIds = [];
+    private bool shareSending;
+    private bool shareSuccess;
+    private PeriodicTimer? liveTimer;
+    private CancellationTokenSource? liveTimerCts;
+
     protected override async Task OnInitializedAsync()
     {
         var seasonPlayerId = await Db.Tournaments.Where(t => t.Id == Id).Select(t => t.Season!.PlayerId).FirstOrDefaultAsync();
@@ -344,6 +488,7 @@ else
         }
 
         canManage = await CurrentUser.CanManageFamilyDataAsync();
+        Notifier.TournamentChanged += OnTournamentChanged;
         await LoadAsync();
     }
 
@@ -365,6 +510,273 @@ else
             eventClub = ClubTimelineHelper.ClubAt(memberships, tournament.Date, tournament.Season.Club);
             form.Position = tournament.Season.Player?.Position ?? "";
         }
+        EnsureLiveTimer();
+    }
+
+    /// <summary>Un autre circuit (fiche match d'un autre membre, page famille) a modifié ce tournoi :
+    /// recharge et rafraîchit l'affichage. Voir <see cref="LiveMatchNotifier"/> et CLAUDE.md, "Render modes".</summary>
+    private void OnTournamentChanged(int tournamentId)
+    {
+        if (tournament?.Id != tournamentId) return;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>Démarre ou arrête le tic du chrono (1s) selon qu'un match de ce tournoi est en direct ou non.</summary>
+    private void EnsureLiveTimer()
+    {
+        var anyLive = tournament?.Matches.Any(m => m.IsLive) == true;
+        if (anyLive && liveTimer is null)
+        {
+            liveTimerCts = new CancellationTokenSource();
+            liveTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            _ = RunLiveTimerAsync(liveTimer, liveTimerCts.Token);
+        }
+        else if (!anyLive && liveTimer is not null)
+        {
+            liveTimerCts?.Cancel();
+            liveTimer.Dispose();
+            liveTimer = null;
+        }
+    }
+
+    private async Task RunLiveTimerAsync(PeriodicTimer timer, CancellationToken token)
+    {
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private static string ElapsedLabel(MatchRecord m)
+    {
+        if (m.StartedAt is null) return "00:00";
+        var elapsed = (m.EndedAt ?? DateTime.UtcNow) - m.StartedAt.Value;
+        if (elapsed < TimeSpan.Zero) elapsed = TimeSpan.Zero;
+        return $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+    }
+
+    private void AddMatchEvent(MatchRecord m, MatchEventType type)
+    {
+        var minute = m.StartedAt is null ? 0 : (int)Math.Round((DateTime.UtcNow - m.StartedAt.Value).TotalMinutes);
+        Db.MatchEvents.Add(new MatchEvent { MatchRecordId = m.Id, Type = type, MinuteMark = Math.Max(0, minute) });
+    }
+
+    /// <summary>Ouvre le choix titulaire/remplaçant avant de démarrer : forcé à chaque coup d'envoi (pas de valeur
+    /// par défaut silencieuse) car la composition peut différer de ce qui a été saisi à la création du match.</summary>
+    private void OpenStartMatch(MatchRecord m)
+    {
+        if (!canManage) return;
+        matchToStart = m;
+        startModal?.Open();
+    }
+
+    private async Task ConfirmStartMatch(bool isStarter)
+    {
+        if (matchToStart is not { } m) return;
+        m.IsStarter = isStarter;
+        m.OnField = isStarter;
+        m.StartedAt = DateTime.UtcNow;
+        AddMatchEvent(m, MatchEventType.Kickoff);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+        EnsureLiveTimer();
+        matchToStart = null;
+        startModal?.Close();
+    }
+
+    private async Task StopMatch(MatchRecord m)
+    {
+        if (!canManage) return;
+        if (!await Confirm.AskAsync(new ConfirmRequest
+        {
+            Title = "Arrêter le match",
+            Message = "Le chrono s'arrête et le score n'évoluera plus pour les autres membres de la famille. Les statistiques restent modifiables ensuite depuis la fiche.",
+            ConfirmLabel = "Arrêter",
+            Icon = ConfirmIcon.Power,
+            SubjectName = string.IsNullOrWhiteSpace(m.Opponent) ? $"Équipe {tournament!.TeamNumber}" : m.Opponent,
+            SubjectMeta = $"{ElapsedLabel(m)} · {m.TeamGoalsFor} – {m.TeamGoalsAgainst}"
+        })) return;
+
+        m.EndedAt = DateTime.UtcNow;
+        AddMatchEvent(m, MatchEventType.FullTime);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+        EnsureLiveTimer();
+    }
+
+    private async Task EnterPlayer(MatchRecord m)
+    {
+        if (!canManage || m.OnField) return;
+        m.OnField = true;
+        AddMatchEvent(m, MatchEventType.PlayerIn);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    private async Task ExitPlayer(MatchRecord m)
+    {
+        if (!canManage || !m.OnField) return;
+        m.OnField = false;
+        AddMatchEvent(m, MatchEventType.PlayerOut);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    private async Task SetStarter(MatchRecord m, bool isStarter)
+    {
+        if (!canManage || m.IsStarter == isStarter) return;
+        m.IsStarter = isStarter;
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    private async Task AddGoal(MatchRecord m)
+    {
+        if (!canManage) return;
+        m.PlayerGoals++;
+        m.TeamGoalsFor++;
+        AddMatchEvent(m, MatchEventType.Goal);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    /// <summary>But marqué par un coéquipier (pas par le fils suivi) : compte dans le score de l'équipe mais
+    /// jamais dans les buts personnels.</summary>
+    private async Task AddTeamGoal(MatchRecord m)
+    {
+        if (!canManage) return;
+        m.TeamGoalsFor++;
+        AddMatchEvent(m, MatchEventType.TeammateGoal);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    /// <summary>Une passe décisive suppose qu'un but a été marqué grâce à elle : le score de l'équipe avance aussi,
+    /// mais le but ne compte pas pour le fils suivi (ce n'est pas lui qui l'a marqué).</summary>
+    private async Task AddAssist(MatchRecord m)
+    {
+        if (!canManage) return;
+        m.PlayerAssists++;
+        m.TeamGoalsFor++;
+        AddMatchEvent(m, MatchEventType.Assist);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    private async Task AddOpponentGoal(MatchRecord m)
+    {
+        if (!canManage) return;
+        m.TeamGoalsAgainst++;
+        AddMatchEvent(m, MatchEventType.OpponentGoal);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+    }
+
+    /// <summary>Annule le dernier pointage (but, passe, but adverse, entrée/sortie...) en cas d'erreur de saisie :
+    /// retire l'évènement et défait son effet sur les compteurs du match.</summary>
+    private async Task UndoLastEvent(MatchRecord m)
+    {
+        if (!canManage) return;
+        var last = await Db.MatchEvents
+            .Where(e => e.MatchRecordId == m.Id)
+            .OrderByDescending(e => e.Id)
+            .FirstOrDefaultAsync();
+        if (last is null) return;
+
+        switch (last.Type)
+        {
+            case MatchEventType.Goal:
+                m.PlayerGoals = Math.Max(0, m.PlayerGoals - 1);
+                m.TeamGoalsFor = Math.Max(0, m.TeamGoalsFor - 1);
+                break;
+            case MatchEventType.TeammateGoal:
+                m.TeamGoalsFor = Math.Max(0, m.TeamGoalsFor - 1);
+                break;
+            case MatchEventType.Assist:
+                m.PlayerAssists = Math.Max(0, m.PlayerAssists - 1);
+                m.TeamGoalsFor = Math.Max(0, m.TeamGoalsFor - 1);
+                break;
+            case MatchEventType.OpponentGoal:
+                m.TeamGoalsAgainst = Math.Max(0, m.TeamGoalsAgainst - 1);
+                break;
+            case MatchEventType.PlayerIn:
+                m.OnField = false;
+                break;
+            case MatchEventType.PlayerOut:
+                m.OnField = true;
+                break;
+            case MatchEventType.Kickoff:
+                m.StartedAt = null;
+                break;
+            case MatchEventType.FullTime:
+                m.EndedAt = null;
+                break;
+        }
+
+        Db.MatchEvents.Remove(last);
+        await Db.SaveChangesAsync();
+        Notifier.NotifyTournamentChanged(m.TournamentId);
+        EnsureLiveTimer();
+    }
+
+    private async Task OpenShare()
+    {
+        if (!canManage || tournament?.Season?.Player?.OwnerAdminId is not { } adminId) return;
+        familyMembers = await FamilyMembersHelper.GetForAdminAsync(Db, adminId);
+        var currentUser = await CurrentUser.GetCurrentUserAsync();
+        selectedFamilyIds = familyMembers.Where(u => u.Id != currentUser.Id).Select(u => u.Id).ToHashSet();
+        shareSuccess = false;
+        shareModal?.Open();
+    }
+
+    private void ToggleFamilySelection(int userId, bool isChecked)
+    {
+        if (isChecked) selectedFamilyIds.Add(userId);
+        else selectedFamilyIds.Remove(userId);
+    }
+
+    private async Task ShareViaWhatsApp()
+    {
+        if (tournament?.Season?.Player is null) return;
+        shareSending = true;
+        var currentUser = await CurrentUser.GetCurrentUserAsync();
+        var (_, rawToken) = await ShareLinkSvc.CreateAsync(tournament.Id, currentUser.Id);
+
+        var recipientNames = familyMembers.Where(u => selectedFamilyIds.Contains(u.Id)).Select(u => u.FirstName).ToList();
+        var greeting = recipientNames.Count > 0 ? string.Join(", ", recipientNames) + " : " : "";
+        var eventLabel = tournament.Name ?? tournament.EventType.ToString();
+        var message = $"{greeting}suivez {eventLabel} de {tournament.Season.Player.FirstName} en direct sur FootStats :";
+
+        var url = ShareLinkSvc.BuildWhatsAppShareUrl(rawToken, message);
+        await JS.InvokeVoidAsync("footstats.openInNewTab", url);
+
+        shareSending = false;
+        shareSuccess = true;
+        StateHasChanged();
+        await Task.Delay(1500);
+        shareModal?.Close();
+    }
+
+    private static string PlayerInitials(string firstName, string lastName)
+    {
+        var a = firstName.Length > 0 ? firstName[0].ToString() : "";
+        var b = lastName.Length > 0 ? lastName[0].ToString() : "";
+        return (a + b).ToUpper();
+    }
+
+    public void Dispose()
+    {
+        Notifier.TournamentChanged -= OnTournamentChanged;
+        liveTimerCts?.Cancel();
+        liveTimer?.Dispose();
     }
 
     /// <summary>Pointe la présence sur l'entité <see cref="Tournament"/> elle-même (pas de table à part comme
@@ -391,12 +803,14 @@ else
             IsStarter = form.IsStarter,
             PlayedFullMatch = form.PlayedFullMatch,
             Position = string.IsNullOrWhiteSpace(form.Position) ? null : form.Position,
-            Note = string.IsNullOrWhiteSpace(form.Note) ? null : form.Note.Trim()
+            Note = string.IsNullOrWhiteSpace(form.Note) ? null : form.Note.Trim(),
+            DurationMinutes = form.DurationMinutes
         });
         await Db.SaveChangesAsync();
         form = new MatchForm();
         fab?.Close();
         await LoadAsync();
+        Notifier.NotifyTournamentChanged(Id);
     }
 
     private void OpenEdit(MatchRecord match)
@@ -414,7 +828,8 @@ else
             IsStarter = match.IsStarter,
             PlayedFullMatch = match.PlayedFullMatch,
             Position = match.Position ?? "",
-            Note = match.Note ?? ""
+            Note = match.Note ?? "",
+            DurationMinutes = match.DurationMinutes
         };
         editModal?.Open();
     }
@@ -435,10 +850,12 @@ else
         match.PlayedFullMatch = editForm.PlayedFullMatch;
         match.Position = string.IsNullOrWhiteSpace(editForm.Position) ? null : editForm.Position;
         match.Note = string.IsNullOrWhiteSpace(editForm.Note) ? null : editForm.Note.Trim();
+        match.DurationMinutes = editForm.DurationMinutes;
 
         await Db.SaveChangesAsync();
         editModal?.Close();
         await LoadAsync();
+        Notifier.NotifyTournamentChanged(match.TournamentId);
     }
 
     private async Task DeleteMatch(int matchId)
@@ -458,9 +875,11 @@ else
             SubjectMeta = $"Équipe {tournament!.TeamNumber} · {match.TeamGoalsFor} – {match.TeamGoalsAgainst} · {match.PlayerGoals} but{(match.PlayerGoals > 1 ? "s" : "")}"
         })) return;
 
+        var tournamentId = match.TournamentId;
         Db.Matches.Remove(match);
         await Db.SaveChangesAsync();
         await LoadAsync();
+        Notifier.NotifyTournamentChanged(tournamentId);
     }
 
     private static string MatchResultClass(MatchRecord m) =>
@@ -481,5 +900,6 @@ else
         public bool IsStarter { get; set; } = true;
         public bool PlayedFullMatch { get; set; }
         public string Note { get; set; } = "";
+        public int? DurationMinutes { get; set; }
     }
 }

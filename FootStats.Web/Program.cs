@@ -26,9 +26,12 @@ builder.Services.AddScoped<CalendarService>();
 builder.Services.AddScoped<ConfirmService>();
 builder.Services.AddSingleton(new UploadsPathProvider(uploadsPath));
 builder.Services.AddDataProtection();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<IEmailSender, EmailService>();
 builder.Services.AddScoped<InvitationService>();
 builder.Services.AddScoped<ShareInviteService>();
+builder.Services.AddScoped<MatchShareLinkService>();
+builder.Services.AddSingleton<LiveMatchNotifier>();
 builder.Services.AddHostedService<InvitationExpiryHostedService>();
 builder.Services.AddHostedService<MatchReminderHostedService>();
 
@@ -83,7 +86,7 @@ var app = builder.Build();
 // handlers OAuth (Google/Microsoft) construisent leurs URLs en http://, ce qui casse le redirect_uri attendu.
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost
 });
 
 using (var scope = app.Services.CreateScope())

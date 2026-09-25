@@ -4,7 +4,7 @@
     {
       "name": "footstats-web",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "FootStats.Web", "--launch-profile", "http"],
+      "runtimeArgs": ["run", "--project", "FootStats.Web"],
       "port": 5212
     }
   ]

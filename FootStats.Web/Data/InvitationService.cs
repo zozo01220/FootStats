@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using FootStats.Web.Models;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 
 namespace FootStats.Web.Data;
@@ -42,14 +43,25 @@ public enum PasswordResetRequestResult
 
 /// <summary>Gère le cycle de vie des jetons envoyés par email : invitations famille (User/Consultant),
 /// notices de réactivation Admin, et confirmations d'email pour l'auto-inscription.</summary>
-public class InvitationService(AppDbContext db, IEmailSender emailSender, IConfiguration config, ILogger<InvitationService> logger)
+public class InvitationService(AppDbContext db, IEmailSender emailSender, IConfiguration config, ILogger<InvitationService> logger, IHttpContextAccessor httpContextAccessor)
 {
     private const int ExpiryHours = 72;
     private static readonly TimeSpan PasswordResetExpiry = TimeSpan.FromMinutes(30);
 
-    /// <summary>Base URL publique de l'application, utilisée pour construire le lien d'invitation.
-    /// Configurable via App:BaseUrl (utile aussi bien depuis les pages Blazor que depuis le service d'arrière-plan).</summary>
-    private string BaseUrl => (config["App:BaseUrl"] ?? "https://kids.familleprieur01.duckdns.org").TrimEnd('/');
+    /// <summary>Base URL publique de l'application, utilisée pour construire le lien d'invitation. Dérivée de la
+    /// requête en cours quand elle existe (dev comme prod, quel que soit le domaine réel vu par nginx), sinon
+    /// repliée sur App:BaseUrl — c'est ce deuxième cas qui s'applique depuis les services d'arrière-plan
+    /// (<see cref="InvitationExpiryHostedService"/>, <see cref="MatchReminderHostedService"/>), qui n'ont pas de
+    /// requête HTTP en cours.</summary>
+    private string BaseUrl
+    {
+        get
+        {
+            var request = httpContextAccessor.HttpContext?.Request;
+            if (request is not null) return $"{request.Scheme}://{request.Host}";
+            return (config["App:BaseUrl"] ?? "https://footstats.lok-izy.fr").TrimEnd('/');
+        }
+    }
 
     public async Task CreateAndSendAsync(int userId, int createdByAdminId)
     {

@@ -1,6 +1,7 @@
 @page "/login"
 @attribute [AllowAnonymous]
 @layout Layout.EmptyLayout
+@using System.Reflection
 @inject IConfiguration Configuration
 
 <PageTitle>Connexion - FootStats</PageTitle>
@@ -127,6 +128,7 @@
             <div style="text-align: center; font-size: 13px; color: var(--muted);">
                 Pas encore de compte ? <a href="/inscription" style="color: var(--gold-dark); font-weight: 700;">Créer un compte</a>
             </div>
+            <div class="login-version">FootStats v@(AppVersion)</div>
         </div>
     </div>
 </div>
@@ -153,4 +155,9 @@
 
     private bool GoogleEnabled => !string.IsNullOrEmpty(Configuration["Authentication:Google:ClientId"]);
     private bool MicrosoftEnabled => !string.IsNullOrEmpty(Configuration["Authentication:Microsoft:ClientId"]);
+
+    private static readonly string AppVersion = Assembly.GetExecutingAssembly()
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+        ?? "?";
 }
